@@ -1,11 +1,11 @@
 ---
-name: ios-automation
-description: "执行 iOS 真机与模拟器自动化。用于 WebDriverAgent 场景下的设备发现、WDA 启动、Session 创建、页面读取、元素交互、手势、系统控制、故障恢复与性能调优。适用于通过 xcodebuild、simctl、curl 或 WDA REST API 完成移动端自动化任务。"
+name: ios-use
+description: "操作 iOS / iPhone 真机与模拟器自动化。用于 WebDriverAgent 场景下的设备发现、WDA 启动、Session 创建、页面读取、元素交互、手势、系统控制、故障恢复与性能调优。适用于通过 xcodebuild、simctl、curl 或 WDA REST API 完成移动端自动化任务。"
 argument-hint: "描述任务，例如：在真机启动 WDA 并创建 session；读取 source 后点击按钮；处理权限弹窗并截图"
 user-invocable: true
 ---
 
-# iOS 自动化技能
+# 操作 iOS / iPhone 真机与模拟器自动化技能
 
 ## 适用场景
 - 在真机或模拟器上启动、复用或重启 WebDriverAgent
