@@ -18,9 +18,20 @@ user-invocable: true
 - 将当前操作产生的截图、日志、临时脚本和其他中间文件统一放在该时间戳目录下，避免散落在仓库其他位置。
 - 这样做的目的：集中保留调试证据、按时间快速定位一次操作、减少临时文件混乱和遗漏。
 
+## 快速路径
+当你只是想尽快复用当前真机/WDA，而不是从零排查时，优先走下面这条路径：
+
+1. 运行 `bash skills/ios-use/scripts/ios_wda_preflight.sh --ensure-forward`。
+2. 如果输出里的 `wdaReady` 是 `true`，直接继续，不要重新枚举所有历史命令。
+3. 如果输出里的 `nextAction` 不是 `reuse`，`preflight` 会先自动尝试 `xcodebuild ... test-without-building`，失败后再回退到完整 `xcodebuild ... test`，日志落在对应的 `tmp/<timestamp>/` 目录下。
+4. 需要 session 时，运行 `bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id <bundleId>`。
+5. 需要抓页面证据时，运行 `bash skills/ios-use/scripts/ios_wda_snapshot.sh`。
+6. 需要向某个元素输入文本时，运行 `bash skills/ios-use/scripts/ios_wda_type.sh --using <strategy> --locator <value> --text-file <path>`。
+
+
 ## 标准流程
 1. 先创建本次操作的 `./tmp/<yymmddhhmmss>/` 临时目录，用于集中保存截图、日志、脚本和其他中间文件。
-2. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态；真机场景先用 Xcode 可见设备对齐 UDID，不要直接复用上一次命令里的旧设备号。
+2. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态；真机场景先用脚本校验 `./tmp/ios-use-cache.json`，只有缓存失效时才回退到从头检查。
 3. 如果设备上已有可用 WDA，优先复用已有构建或 `test-without-building` 路径；否则再走完整 `xcodebuild test` 和签名修复流程。
 4. 建立 session 后，优先通过 `/source`、`/wda/accessibleSource` 和元素 API 做结构化交互；需要具体路由时查 [命令参考](./references/command-reference.md)。
 5. 输入文本时，优先使用元素级 `/element/:uuid/value`；仅在焦点已明确时使用 `/wda/keys`。细节见 [输入与键盘](./references/input-and-keyboard.md)。
@@ -64,6 +75,7 @@ dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径
 - 需要 session 的操作之前，已确认 session 创建成功或会话仍然有效。
 - 每次交互后至少通过元素状态、页面源码、截图或应用状态之一验证结果。
 - 出现失败时，已记录错误类型，并执行对应的最短恢复路径，而不是盲目重试。
+- 本次运行的缓存文件已经更新到 `./tmp/ios-use-cache.json`，后续可以先尝试复用。
 
 ## 参考资料
 - [启动与 Session](./references/startup-and-session.md)

@@ -3,6 +3,39 @@
 ## 目标
 在真机或模拟器上把 WebDriverAgent 跑起来，确认服务可用，并创建后续交互所需的 session。
 
+## 脚本化快速路径
+如果目标是尽快开始操作，而不是手动拼接所有检查命令，优先按下面执行：
+
+```bash
+bash skills/ios-use/scripts/ios_wda_preflight.sh --ensure-forward
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.mobilenotes
+```
+
+说明：
+- 第一条命令会优先读取 `./tmp/ios-use-cache.json`，验证缓存里的 UDID、`8100` 监听和 WDA 健康状态。
+- 只有缓存不可直接复用时，它才会把 `nextAction` 标成 `rebuild-forward`、`launch-wda` 或 `inspect-wda-log`。
+- 当 WDA 不可用时，脚本会先自动尝试 `xcodebuild -project <project> -scheme <scheme> -destination "id=<UDID>" test-without-building`；只有这一步失败时才回退到完整 `xcodebuild ... test`。
+- 第二条命令优先复用已经校验过的 session；复用失败时再创建新的 session。
+
+## 缓存文件约定
+- 缓存文件路径固定为 `./tmp/ios-use-cache.json`。
+- 建议缓存字段：
+  - `device.udid`、`device.name`、`device.osVersion`
+  - `connection.listenerPid`、`connection.listenerTargetUdid`、`connection.port`
+  - `wda.ready`、`wda.status`
+  - `session.id`、`session.bundleId`
+  - `artifacts.lastRunDir`
+- 缓存命中不等于可复用；是否可复用以脚本实时验证结果为准。
+
+## 缓存复用策略
+- 缓存至少记录：最近一次可用的真机 UDID、本机 `8100` 监听信息、WDA 状态、最近一次 session、最近一次截图输出目录。
+- 复用缓存前必须通过脚本校验，不直接相信缓存本身：
+	- 缓存里的 UDID 仍然出现在 `xcrun xctrace list devices` 的在线设备里。
+	- 本机 `8100` 的监听进程仍然存在，且目标 UDID 与缓存一致。
+	- `GET /status` 仍返回 `ready=true`。
+- 只要上述三项有一项不成立，就认为缓存不可直接复用，先修复转发，再决定是否重新拉起 WDA。
+- 不要把一次失败后的 `sessionId` 当成长期可信数据；session 只能校验后复用，不能盲用。
+
 ## 启动前检查
 - Xcode 与 Command Line Tools 可用。
 - 真机场景额外确认 `ios-deploy` 与 `iproxy` 可用。
@@ -12,7 +45,7 @@
 
 ## 真机标准流程
 1. 用 Xcode 原生命令 `xcrun xctrace list devices` 确认 Xcode 实际可见且在线的设备 ID；如果其他工具显示不同 UDID，以这里和 `xcodebuild` destination 可用列表为准。
-2. 启动前检查本机 `8100` 端口：`lsof -nP -iTCP:8100 -sTCP:LISTEN`；如果已有旧监听，先用 `ps` 确认它是否仍指向目标设备，不是则先清理。
+2. 启动前优先运行 `ios_wda_preflight.sh`；只有在脚本判定缓存失效时，才手动检查本机 `8100` 端口和 `ps`。
 3. 已有可用构建时优先 `test-without-building`；没有构建产物时使用完整 `test`。
 4. 为 USB 连接建立端口转发：`iproxy -u <UDID> 8100:8100`。
 5. 用 `GET /status` 或 `GET /wda/healthcheck` 确认 WDA 已经起来；如果 TCP 已连通但被对端 `connection reset by peer`，优先怀疑转发目标错误或目标设备上没有对应 WDA。
@@ -30,6 +63,7 @@
 - 以 Xcode 可见且能出现在 destination 里的在线设备为准。
 - 不沿用历史命令中的 UDID，哪怕它在别的工具里还能列出来。
 - 发现旧 `iproxy` 指向错误设备时，先清掉旧监听，再建立新的 `iproxy -u <UDID> 8100:8100`。
+- 如果 `./tmp/ios-use-cache.json` 中记录的 `listenerTargetUdid` 与当前在线目标设备不一致，直接判定缓存不可复用。
 
 完整构建示例：
 
@@ -103,3 +137,5 @@ curl -X POST http://localhost:8100/session \
 2. 如果 `curl` 已连接 `8100` 但被 `connection reset by peer`，先检查本机端口监听和 `iproxy` 目标设备，而不是直接重跑更多 WDA 命令。
 3. 服务可通但 `POST /session` 失败时，先精简 capabilities，再检查 App 路径或包名。
 4. 真机若仍失败，优先检查签名、开发团队 ID、唯一 Bundle ID 与设备信任状态。
+5. 如果缓存文件存在，但脚本输出 `nextAction != reuse`，优先信任实时检查结论，而不是强行沿用缓存里的旧 `sessionId` 或旧 UDID。
+6. 如果自动 `test-without-building` 和完整 `test` 都失败，优先看 `tmp/<timestamp>/wda-test-without-building.log` 和 `tmp/<timestamp>/wda-test.log`，不要只看终端最后一行报错。
