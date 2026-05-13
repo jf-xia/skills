@@ -34,6 +34,28 @@ user-invocable: true
 - 需要对具体元素输入时用元素级输入；只是向当前焦点发送键盘事件时用 `/wda/keys`。
 - 需要复现系统级场景时优先使用 `/wda/apps/*`、`/alert/*`、`/wda/lock`、`/orientation` 等专用接口，不要硬编码坐标。
 
+## 信息不足时的代码库追问
+- 当已经提供的信息不足以继续判断，或者需要确认更底层的实现细节、路由来源、异常来源、参数语义时，可以使用 deepwiki 的 CLI 直接询问 WebDriverAgent 代码库。
+- 推荐仓库：`appium/WebDriverAgent`。
+- 常用命令形式：`dw aq -r "appium/WebDriverAgent" -q "<你的问题>"`
+
+使用示例：
+
+```bash
+dw aq -r "appium/WebDriverAgent" -q "raw REST probing 举例说明"
+dw aq -r "appium/WebDriverAgent" -q "POST /session 在 WebDriverAgent 里经过哪些 handler 和对象"
+dw aq -r "appium/WebDriverAgent" -q "element/:uuid/value 的输入链路和 frequency 参数是怎么生效的"
+dw aq -r "appium/WebDriverAgent" -q "No Such Driver 和 Stale Element 在代码里分别从哪里抛出"
+dw aq -r "appium/WebDriverAgent" -q "waitForQuiescence 相关逻辑在哪些文件里，具体影响哪些动作"
+dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径有什么差异"
+```
+
+适合追问的内容：
+- 某个 REST 路由由哪个 handler、command 或 category 实现。
+- 某个异常、HTTP 状态码或错误文本是在什么条件下抛出的。
+- 某个 capability、setting 或内部参数在代码里的实际作用范围。
+- 某个接口在裸 WDA、上层 driver 封装和 XCTest 底层之间分别由谁负责。
+
 ## 完成标准
 - WDA 的 `GET /status` 或 `GET /wda/healthcheck` 可用。
 - 需要 session 的操作之前，已确认 session 创建成功或会话仍然有效。
