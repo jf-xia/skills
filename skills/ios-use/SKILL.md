@@ -35,9 +35,10 @@ user-invocable: true
 3. 如果设备上已有可用 WDA，优先复用已有构建或 `test-without-building` 路径；否则再走完整 `xcodebuild test` 和签名修复流程。
 4. 建立 session 后，优先通过 `/source`、`/wda/accessibleSource` 和元素 API 做结构化交互；需要具体路由时查 [命令参考](./references/command-reference.md)。
 5. 输入文本时，优先使用元素级 `/element/:uuid/value`；仅在焦点已明确时使用 `/wda/keys`。细节见 [输入与键盘](./references/input-and-keyboard.md)。
-6. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)；切应用后必须验证前台 App，必要时回退到系统级启动。
-7. 当可访问性信息不足、页面动画频繁或需要视觉闭环时，退回截图/坐标策略，并按 [视觉驱动与性能](./references/visual-and-performance.md) 调优。
-8. 任何 404、408、Session Not Created、元素不可见、输入失败等异常，都先按 [故障排查](./references/troubleshooting.md) 执行最短恢复，再查看 [限制与取舍](./references/limitations.md) 判断是否需要切换策略。
+6. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)；切应用后必须验证前台 App。需要回主屏时优先 `/wda/homescreen` 或 `pressButton(home)`，不要把激活 `com.apple.springboard` 当成稳定退场路径。
+7. 修改会影响系统行为的 App 状态后，例如时间窗、限制策略、权限或 shield 文案，不能只看按钮点击成功；还要同时验证表单是否真正持久化，以及下游行为是否已经变化。
+8. 当可访问性信息不足、页面动画频繁或需要视觉闭环时，退回截图/坐标策略，并按 [视觉驱动与性能](./references/visual-and-performance.md) 调优。
+9. 任何 404、408、Session Not Created、元素不可见、输入失败或“保存后行为未变化”等异常，都先按 [故障排查](./references/troubleshooting.md) 执行最短恢复，再查看 [限制与取舍](./references/limitations.md) 判断是否需要切换策略。
 
 ## 决策要点
 - 真机优先检查签名、`iproxy`、`xcodebuild`；模拟器优先检查 `simctl` 状态和 App 安装。
@@ -45,8 +46,10 @@ user-invocable: true
 - 真机启动前先查本机 `8100` 端口是否已有监听；如果旧 `iproxy` 仍指向别的设备，先清理再继续。
 - 有稳定可访问性节点时优先元素定位；没有稳定节点时退回截图加坐标点击。
 - 需要对具体元素输入时用元素级输入；只是向当前焦点发送键盘事件时用 `/wda/keys`。
+- `PickerWheel` 不要当普通文本框处理；优先用 `/wda/pickerwheel/:uuid/select`，并记住它每次调用都会先沿 `order` 方向移动一步，再判断是否达到期望值。
 - 需要复现系统级场景时优先使用 `/wda/apps/*`、`/alert/*`、`/wda/lock`、`/orientation` 等专用接口，不要硬编码坐标。
 - `/wda/apps/activate` 成功并不等于目标 App 已经在前台；系统 App 或未运行 App 要结合 `/wda/activeAppInfo`、截图或系统级 `ios launch` 路径确认。
+- 遇到 12 小时制时间选择器时，先读取设备上实际显示的 `AM/PM`，再判断“当前时间是否命中窗口”；不要只按宿主机时间或日志时区推断。
 
 ## 信息不足时的代码库追问
 - 当已经提供的信息不足以继续判断，或者需要确认更底层的实现细节、路由来源、异常来源、参数语义时，可以使用 deepwiki 的 CLI 直接询问 WebDriverAgent 代码库。
@@ -74,6 +77,7 @@ dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径
 - WDA 的 `GET /status` 或 `GET /wda/healthcheck` 可用。
 - 需要 session 的操作之前，已确认 session 创建成功或会话仍然有效。
 - 每次交互后至少通过元素状态、页面源码、截图或应用状态之一验证结果。
+- 任何会改变系统副作用的保存动作，至少完成一次“保存后表单复读”或一次“下游行为验证”；只看到 `Save` 点击成功不算完成。
 - 出现失败时，已记录错误类型，并执行对应的最短恢复路径，而不是盲目重试。
 - 本次运行的缓存文件已经更新到 `./tmp/ios-use-cache.json`，后续可以先尝试复用。
 

@@ -53,6 +53,28 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/wda/keys \
 | `Slider` | 只接受 `0` 到 `1` 的归一化值 |
 | 普通文本元素 | 标准输入与清空流程 |
 
+## PickerWheel
+
+优先使用 WDA 的专用选择接口，而不是 `/element/:uuid/value`：
+
+```bash
+curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pickerwheel/$ELEMENT_ID/select \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order": "next",
+    "value": "58 minutes",
+    "maxAttempts": 30
+  }'
+```
+
+说明：
+- `order` 只能是 `next` 或 `previous`，表示每一步沿哪个方向拨动。
+- `value` 是期望最终值，`maxAttempts` 是最多尝试次数；它们不是“只校验不移动”的参数。
+- 这个路由的语义是：每次调用先移动一格，再检查是否已经达到 `value`。也就是说，如果元素当前其实已经在目标值，继续调用仍可能把它拨离目标。
+- 对时间选择器这类多轮控件，优先一次只改一个 wheel，并在关闭弹层后重新读取界面值，不要把多轮大跨度修改和最终判断混在一次长链里。
+- 如果 `/element/:uuid/value` 返回成功但 UI 没变，优先怀疑控件类型错误，而不是输入频率问题。
+- 当任务依赖“当前时间是否命中时间窗”时，先从设备 UI 或 picker wheel 本身确认 `AM/PM`，不要只根据宿主机时间推断。
+
 ## 频率参数来源
 1. 请求体显式传入的 `frequency`
 2. `FBConfiguration.maxTypingFrequency`

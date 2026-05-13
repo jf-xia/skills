@@ -45,6 +45,7 @@
 | 动作 | `POST` | `/element/:uuid/click` | 点击元素 |
 | 动作 | `POST` | `/element/:uuid/clear` | 清空文本 |
 | 动作 | `POST` | `/element/:uuid/value` | 输入文本或设置可调元素值 |
+| 动作 | `POST` | `/wda/pickerwheel/:uuid/select` | 沿给定方向调整 `PickerWheel`，可带目标值与尝试次数 |
 
 元素输入示例：
 
@@ -53,6 +54,18 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/element/$ELEMENT_ID/value
 	-H "Content-Type: application/json" \
 	-d '{"value": ["hello"], "frequency": 30}'
 ```
+
+PickerWheel 示例：
+
+```bash
+curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pickerwheel/$ELEMENT_ID/select \
+	-H "Content-Type: application/json" \
+	-d '{"order": "next", "value": "11 o’clock", "maxAttempts": 8}'
+```
+
+说明：
+- `PickerWheel` 不要优先走 `/element/:uuid/value`；专用路由的行为更接近真实拨轮。
+- 该接口每次调用会先移动一格，再判断是否达到目标值；如果只是想确认当前值，不要再次调用它。
 
 ## 简单手势接口
 

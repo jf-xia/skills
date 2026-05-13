@@ -10,11 +10,15 @@
 | `POST` | `/wda/apps/state` | 查询应用状态 |
 | `GET` | `/wda/apps/list` | 列出活动应用 |
 | `POST` | `/url` | 打开 URL，可指定包名 |
+| `POST` | `/wda/homescreen` | 返回主屏；适合稳定退出当前 App |
+| `POST` | `/wda/pressButton` | 模拟系统按键，例如 `home`、音量键 |
 
 说明：
 - `/wda/apps/activate` 更适合把已运行应用切回前台。
+- `/wda/homescreen` 或 `pressButton(home)` 更适合明确回到 SpringBoard；不要把 `activate com.apple.springboard` 当成可靠的“退回桌面”动作。
 - 如果目标 App 尚未运行，或者是备忘录这类系统 App，`activate` 返回成功后仍要立即用 `/wda/activeAppInfo`、页面树或截图确认前台是否真的切换成功。
 - 如果前台仍然是 SpringBoard，优先回退到系统级启动，例如 `ios launch <bundleId>`，再重新验证前台应用。
+- 如果点击某个 App 后前台仍显示为 SpringBoard，但页面树或截图出现了 shield / blocked 覆盖层，优先把它判定为系统策略拦截，而不是点击失败。
 
 应用状态枚举：
 
@@ -84,8 +88,19 @@ await agent.runWdaRequest('GET', '/wda/getPasteboard')
 - 某些 WDA 版本提供 `pressButton` 类接口，可用于 Home、音量等系统按键模拟。
 - 这类接口的路由在不同版本中可能有差异；使用前先确认当前 WDA 版本暴露的具体路径。
 
+示例：
+
+```bash
+curl -X POST http://localhost:8100/wda/homescreen -H "Content-Type: application/json" -d '{}'
+
+curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pressButton \
+	-H "Content-Type: application/json" \
+	-d '{"name": "home"}'
+```
+
 ## 使用建议
 - 切应用后马上校验前台状态，避免下一步操作还落在旧应用上。
+- 需要稳定回主屏时优先 `/wda/homescreen`；只有在版本不支持该路由时，再退回 `pressButton(home)`。
 - 系统 App 或首次拉起的 App，不要只看 `/wda/apps/activate` 的返回值；要结合 `/wda/activeAppInfo` 判断是否仍停留在 SpringBoard。
 - 如果 WDA 激活接口没有真正把 App 带到前台，优先用系统级 CLI 直接启动，再继续做结构化操作。
 - 系统弹窗优先读按钮列表后再决定 `accept` 或 `dismiss`，不要仅凭截图猜测。
