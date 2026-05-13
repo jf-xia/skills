@@ -13,14 +13,20 @@ user-invocable: true
 - 控制应用生命周期、系统弹窗、锁屏、方向、位置等设备能力
 - 排查签名、连接、无 session、元素失效、键盘和超时问题
 
+## 开始前准备
+- 每次开始使用本技能前，先在项目根目录创建本次操作的临时工作目录：`mkdir -p ./tmp/$(date +%y%m%d%H%M%S)`。
+- 将当前操作产生的截图、日志、临时脚本和其他中间文件统一放在该时间戳目录下，避免散落在仓库其他位置。
+- 这样做的目的：集中保留调试证据、按时间快速定位一次操作、减少临时文件混乱和遗漏。
+
 ## 标准流程
-1. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态。
-2. 如果设备上已有可用 WDA，优先复用已有构建或 `test-without-building` 路径；否则再走完整 `xcodebuild test` 和签名修复流程。
-3. 建立 session 后，优先通过 `/source`、`/wda/accessibleSource` 和元素 API 做结构化交互；需要具体路由时查 [命令参考](./references/command-reference.md)。
-4. 输入文本时，优先使用元素级 `/element/:uuid/value`；仅在焦点已明确时使用 `/wda/keys`。细节见 [输入与键盘](./references/input-and-keyboard.md)。
-5. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)。
-6. 当可访问性信息不足、页面动画频繁或需要视觉闭环时，退回截图/坐标策略，并按 [视觉驱动与性能](./references/visual-and-performance.md) 调优。
-7. 任何 404、408、Session Not Created、元素不可见、输入失败等异常，都先按 [故障排查](./references/troubleshooting.md) 执行最短恢复，再查看 [限制与取舍](./references/limitations.md) 判断是否需要切换策略。
+1. 先创建本次操作的 `./tmp/<yymmddhhmmss>/` 临时目录，用于集中保存截图、日志、脚本和其他中间文件。
+2. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态。
+3. 如果设备上已有可用 WDA，优先复用已有构建或 `test-without-building` 路径；否则再走完整 `xcodebuild test` 和签名修复流程。
+4. 建立 session 后，优先通过 `/source`、`/wda/accessibleSource` 和元素 API 做结构化交互；需要具体路由时查 [命令参考](./references/command-reference.md)。
+5. 输入文本时，优先使用元素级 `/element/:uuid/value`；仅在焦点已明确时使用 `/wda/keys`。细节见 [输入与键盘](./references/input-and-keyboard.md)。
+6. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)。
+7. 当可访问性信息不足、页面动画频繁或需要视觉闭环时，退回截图/坐标策略，并按 [视觉驱动与性能](./references/visual-and-performance.md) 调优。
+8. 任何 404、408、Session Not Created、元素不可见、输入失败等异常，都先按 [故障排查](./references/troubleshooting.md) 执行最短恢复，再查看 [限制与取舍](./references/limitations.md) 判断是否需要切换策略。
 
 ## 决策要点
 - 真机优先检查签名、`iproxy`、`xcodebuild`；模拟器优先检查 `simctl` 状态和 App 安装。

@@ -65,6 +65,25 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/wda/keys \
 - iOS 在较新 Xcode 下支持更多特殊键映射，例如 Delete、Return、Tab、Escape、方向键与功能键。
 - 如果脚本需要发送系统键序列，优先保证焦点明确，再发 `/wda/keys`。
 
+## 特殊键名称
+
+以下键名在较新 iOS 与 Xcode 组合上更常见，适合在焦点已明确时通过 `/wda/keys` 使用：
+
+| 键类别 | 键名 | 说明 |
+| --- | --- | --- |
+| 编辑键 | `Delete` | 退格删除 |
+| 编辑键 | `Return` | 回车 |
+| 编辑键 | `Enter` | 输入确认 |
+| 编辑键 | `Tab` | 制表符 |
+| 编辑键 | `Space` | 空格 |
+| 编辑键 | `Escape` | 退出或关闭当前输入态 |
+| 方向键 | `UpArrow` `DownArrow` `LeftArrow` `RightArrow` | 方向控制 |
+| 功能键 | `F1` 到 `F19` | 功能键 |
+
+使用建议：
+- 先保证目标输入框已获得焦点，再发送特殊键。
+- 旧系统或旧 Xcode 组合的特殊键覆盖可能较弱；如果无效，先回退到普通文本输入或 UI 级确认动作。
+
 ## 平台差异
 
 | 特性 | iOS | tvOS |

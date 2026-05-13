@@ -64,6 +64,18 @@
 | `GET` | `/wda/batteryInfo` | 返回电量与电池状态，仅 iOS |
 | `GET` | `/wda/device/location` | 返回当前设备地理位置 |
 
+## 剪贴板与扩展能力
+- 某些场景会通过原始 REST 请求访问剪贴板接口，例如读取验证码或一次性口令。
+- 这类接口通常不是最基础的 WDA 主路径能力，使用前先确认当前驱动或服务版本是否暴露对应路由。
+
+示例：
+
+```javascript
+await agent.runWdaRequest('GET', '/wda/getPasteboard')
+```
+
+如果当前环境没有暴露该接口，优先退回 UI 读取、短信通知解析或上层驱动提供的专用 API。
+
 ## 系统按键兼容说明
 - 某些 WDA 版本提供 `pressButton` 类接口，可用于 Home、音量等系统按键模拟。
 - 这类接口的路由在不同版本中可能有差异；使用前先确认当前 WDA 版本暴露的具体路径。

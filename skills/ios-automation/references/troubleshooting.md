@@ -19,6 +19,22 @@
 | `Timeout` / 408 | 页面过慢、等待条件不合理 | 拉长连接超时，拆分动作，减少全树扫描 |
 | 输入无效 | 未聚焦、键盘未起、控件类型特殊 | 先点击聚焦，再用正确输入接口 |
 
+## 错误码与异常类型映射
+
+| HTTP 状态码 | 异常类型 | 含义 | AI 应采取的动作 |
+| --- | --- | --- | --- |
+| `400` | `FBInvalidArgumentException` | 请求体格式错误或参数值无效 | 检查 JSON 结构、字段名、字段类型和取值范围 |
+| `404` | `FBSessionDoesNotExistException` | session 已失效或不存在 | 重新创建 session，不要继续复用旧 `sessionId` 或旧元素 ID |
+| `408` | `FBTimeoutException` | 页面响应过慢或等待条件不成立 | 先确认页面状态，再决定延长等待、拆分动作或原位重试 |
+| `500` | `FBSessionCreationException` | session 创建失败 | 精简 capabilities，检查 `bundleId`、`app`、`udid` 和设备准备状态 |
+| `500` | `FBApplicationCrashedException` | 目标应用崩溃或无法维持有效状态 | 重新拉起应用，必要时重建 session，并保留崩溃前后的日志与截图 |
+| `400` | `FBElementNotVisibleException` | 元素不可见或当前不可交互 | 先滚动、等待稳定或切换定位策略，再重试动作 |
+| `404` | `FBStaleElementException` | 元素快照已失效 | 重新读取 `/source`，重新定位元素，不复用旧 UUID |
+
+使用建议：
+- 优先根据 HTTP 状态码判断恢复路径，再结合错误文本细化处理。
+- 如果同时出现 `404` 和元素操作失败，先判定是 session 失效还是元素缓存失效，再决定重建 session 还是只重建元素定位。
+
 ## 自愈顺序
 1. 原位重试一次，仅适用于偶发点击或输入失败。
 2. 重新拉取 `/source` 或截图，确认页面是否已变化。
