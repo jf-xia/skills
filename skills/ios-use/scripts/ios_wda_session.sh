@@ -14,6 +14,7 @@ app_path=""
 force_new="false"
 delete_session="false"
 session_id=""
+run_dir=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       session_id="$2"
       shift 2
       ;;
+    --run-dir)
+      run_dir="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 1
@@ -62,6 +67,7 @@ done
 
 ios_wda_require_tools jq curl
 ios_wda_init_cache_file
+run_dir="$(ios_wda_use_run_dir "${run_dir}")"
 
 if [[ -z "${udid}" ]]; then
   udid="$(ios_wda_cache_get '.device.udid')"
@@ -71,6 +77,7 @@ preflight_cmd=("${SCRIPT_DIR}/ios_wda_preflight.sh" --host "${host}" --port "${p
 if [[ -n "${udid}" ]]; then
   preflight_cmd+=(--udid "${udid}")
 fi
+preflight_cmd+=(--run-dir "${run_dir}")
 
 preflight_json="$("${preflight_cmd[@]}")"
 if [[ "$(printf '%s\n' "${preflight_json}" | jq -r '.wdaReady')" != "true" ]]; then
@@ -130,6 +137,8 @@ if [[ "${delete_session}" == "true" ]]; then
         action: "noop-delete",
         reason: "no-cached-session"
       }')"
+    result_path="$(ios_wda_write_json_artifact "session-delete-result" "${payload}" "${run_dir}")"
+    payload="$(printf '%s\n' "${payload}" | jq --arg resultPath "${result_path}" '. + {resultPath: $resultPath}')"
     ios_wda_emit_json "${payload}"
     exit 0
   fi
@@ -146,11 +155,14 @@ if [[ "${delete_session}" == "true" ]]; then
       action: "deleted",
       sessionId: $sessionId
     }')"
+  result_path="$(ios_wda_write_json_artifact "session-delete-result" "${payload}" "${run_dir}")"
+  payload="$(printf '%s\n' "${payload}" | jq --arg resultPath "${result_path}" '. + {resultPath: $resultPath}')"
   ios_wda_emit_json "${payload}"
   exit 0
 fi
 
 action="created"
+create_response_path=""
 if [[ "${force_new}" != "true" && -n "${session_id}" ]] && validate_session "${session_id}"; then
   action="reused"
 else
@@ -179,6 +191,7 @@ else
     }')"
 
   create_response="$(curl -sf -X POST "${base_url}/session" -H 'Content-Type: application/json' -d "${capabilities_json}")"
+  create_response_path="$(ios_wda_write_json_artifact "session-create-response" "${create_response}" "${run_dir}")"
   session_id="$(printf '%s\n' "${create_response}" | jq -r '.sessionId // .value.sessionId // empty')"
   if [[ -z "${session_id}" ]]; then
     payload="$(jq -n \
@@ -190,6 +203,8 @@ else
         reason: "session-create-failed",
         response: $response
       }')"
+    result_path="$(ios_wda_write_json_artifact "session-result" "${payload}" "${run_dir}")"
+    payload="$(printf '%s\n' "${payload}" | jq --arg resultPath "${result_path}" --arg createResponsePath "${create_response_path}" '. + {resultPath: $resultPath, createResponsePath: $createResponsePath}')"
     ios_wda_emit_json "${payload}"
     exit 3
   fi
@@ -197,9 +212,21 @@ fi
 
 active_app_json='{}'
 activate_result='{}'
+activate_result_path=""
+active_app_path=""
+launch_result='{}'
+launch_result_path=""
 if [[ -n "${bundle_id}" ]]; then
-  activate_result="$(curl -sf -X POST "${base_url}/session/${session_id}/wda/apps/activate" -H 'Content-Type: application/json' -d "$(jq -nc --arg bundleId "${bundle_id}" '{bundleId: $bundleId}')" || printf '{}')"
-  active_app_json="$(curl -sf "${base_url}/wda/activeAppInfo" || printf '{}')"
+  activate_result="$(curl --max-time 15 -sf -X POST "${base_url}/session/${session_id}/wda/apps/activate" -H 'Content-Type: application/json' -d "$(jq -nc --arg bundleId "${bundle_id}" '{bundleId: $bundleId}')" || printf '{}')"
+  activate_result_path="$(ios_wda_write_json_artifact "session-activate-response" "${activate_result}" "${run_dir}")"
+  active_app_json="$(curl --max-time 15 -sf "${base_url}/wda/activeAppInfo" || printf '{}')"
+  active_app_path="$(ios_wda_write_json_artifact "session-active-app-info" "${active_app_json}" "${run_dir}")"
+  if [[ "$(printf '%s\n' "${active_app_json}" | jq -r '.value.bundleId // empty')" != "${bundle_id}" ]]; then
+    launch_result="$(curl --max-time 15 -sf -X POST "${base_url}/wda/apps/launch" -H 'Content-Type: application/json' -d "$(jq -nc --arg bundleId "${bundle_id}" '{bundleId: $bundleId}')" || printf '{}')"
+    launch_result_path="$(ios_wda_write_json_artifact "session-launch-response" "${launch_result}" "${run_dir}")"
+    active_app_json="$(curl --max-time 15 -sf "${base_url}/wda/activeAppInfo" || printf '{}')"
+    active_app_path="$(ios_wda_write_json_artifact "session-active-app-info" "${active_app_json}" "${run_dir}")"
+  fi
 fi
 
 cache_payload="$(jq -n \
@@ -231,8 +258,14 @@ result_payload="$(jq -n \
   --arg deviceName "${device_name}" \
   --arg udid "${udid}" \
   --arg cacheFile "${IOS_WDA_CACHE_FILE}" \
+  --arg runDir "${run_dir}" \
+  --arg createResponsePath "${create_response_path}" \
+  --arg activateResultPath "${activate_result_path}" \
+  --arg activeAppPath "${active_app_path}" \
+  --arg launchResultPath "${launch_result_path}" \
   --argjson activeApp "${active_app_json}" \
   --argjson activateResult "${activate_result}" \
+  --argjson launchResult "${launch_result}" \
   --argjson preflight "${preflight_json}" \
   '{
     ok: true,
@@ -244,10 +277,19 @@ result_payload="$(jq -n \
       name: $deviceName,
       udid: $udid
     },
+    runDir: $runDir,
     bundleId: (if $bundleId == "" then null else $bundleId end),
+    createResponsePath: (if $createResponsePath == "" then null else $createResponsePath end),
+    activateResultPath: (if $activateResultPath == "" then null else $activateResultPath end),
+    activeAppPath: (if $activeAppPath == "" then null else $activeAppPath end),
+    launchResultPath: (if $launchResultPath == "" then null else $launchResultPath end),
     preflight: $preflight,
     activateResult: $activateResult,
+    launchResult: $launchResult,
     activeApp: $activeApp
   }')"
+
+result_path="$(ios_wda_write_json_artifact "session-result" "${result_payload}" "${run_dir}")"
+result_payload="$(printf '%s\n' "${result_payload}" | jq --arg resultPath "${result_path}" '. + {resultPath: $resultPath}')"
 
 ios_wda_emit_json "${result_payload}"

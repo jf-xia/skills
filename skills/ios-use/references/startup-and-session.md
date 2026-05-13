@@ -7,15 +7,17 @@
 如果目标是尽快开始操作，而不是手动拼接所有检查命令，优先按下面执行：
 
 ```bash
-bash skills/ios-use/scripts/ios_wda_preflight.sh --ensure-forward
-bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.mobilenotes
+bash skills/ios-use/scripts/ios_wda_preflight.sh --ensure-forward --run-dir ./tmp/<timestamp>
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.mobilenotes --run-dir ./tmp/<timestamp>
 ```
 
 说明：
 - 第一条命令会优先读取 `./tmp/ios-use-cache.json`，验证缓存里的 UDID、`8100` 监听和 WDA 健康状态。
 - 只有缓存不可直接复用时，它才会把 `nextAction` 标成 `rebuild-forward`、`launch-wda` 或 `inspect-wda-log`。
 - 当 WDA 不可用时，脚本会先自动尝试 `xcodebuild -project <project> -scheme <scheme> -destination "id=<UDID>" test-without-building`；只有这一步失败时才回退到完整 `xcodebuild ... test`。
+- 对 `test-without-building` 和 `test` 这两条长命令，脚本不会等待 `xcodebuild` 自行退出，而是后台拉起后轮询 `/status`；只要 WDA 已 ready，就立刻返回给后续步骤继续使用。
 - 第二条命令优先复用已经校验过的 session；复用失败时再创建新的 session。
+- 同一个 `--run-dir` 下的落盘文件会按动作顺序自动编号，方便回看完整时间线。
 
 ## 缓存文件约定
 - 缓存文件路径固定为 `./tmp/ios-use-cache.json`。
@@ -50,6 +52,11 @@ bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.mobilenotes
 4. 为 USB 连接建立端口转发：`iproxy -u <UDID> 8100:8100`。
 5. 用 `GET /status` 或 `GET /wda/healthcheck` 确认 WDA 已经起来；如果 TCP 已连通但被对端 `connection reset by peer`，优先怀疑转发目标错误或目标设备上没有对应 WDA。
 6. 发送 `POST /session` 创建 session，并保存 `sessionId`。
+
+补充说明：
+- `iproxy` 日志里连续出现 `New connection for 8100->8100` 和 `Requesting connection to USB device handle ...`，通常只是本机在连续请求 `/status`、`/screenshot`、`/source` 等接口。
+- 如果这些日志同时伴随 `curl /status` 成功返回 200，说明转发本身在工作，不要因为日志频繁就误判为 `iproxy` 异常。
+- 只有在本机 `8100` 不再监听、请求超时，或请求结果明确失败时，才把问题归类为需要重建转发。
 
 ## 设备 ID 对齐与端口转发检查
 

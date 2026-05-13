@@ -78,24 +78,29 @@ if ! ios_wda_session_source "${session_id}" "${host}" "${port}" >/dev/null 2>&1;
 fi
 
 if [[ -z "${output_dir}" ]]; then
-  output_dir="$(ios_wda_make_run_dir)"
+  output_dir="$(ios_wda_use_run_dir "")"
+else
+  output_dir="$(ios_wda_use_run_dir "${output_dir}")"
 fi
 mkdir -p "${output_dir}"
 
 base_url="http://${host}:${port}/session/${session_id}"
-source_path="${output_dir}/${prefix}-source.xml"
-accessible_path="${output_dir}/${prefix}-accessible-source.json"
-screenshot_path="${output_dir}/${prefix}-screen.png"
+source_path=""
+accessible_path=""
+screenshot_path=""
 
 if [[ "${capture_source}" == "true" ]]; then
+  source_path="$(ios_wda_reserve_artifact_path "${prefix}-source" "xml" "${output_dir}")"
   curl -sf "${base_url}/source" -o "${source_path}"
 fi
 
 if [[ "${capture_accessible}" == "true" ]]; then
+  accessible_path="$(ios_wda_reserve_artifact_path "${prefix}-accessible-source" "json" "${output_dir}")"
   curl -sf "${base_url}/wda/accessibleSource" -o "${accessible_path}"
 fi
 
 if [[ "${capture_screenshot}" == "true" ]]; then
+  screenshot_path="$(ios_wda_reserve_artifact_path "${prefix}-screen" "png" "${output_dir}")"
   curl -sf "${base_url}/screenshot" | jq -r '.value' | base64 --decode >"${screenshot_path}"
 fi
 
@@ -136,5 +141,8 @@ payload="$(jq -n \
     accessiblePath: (if $accessiblePath == "" then null else $accessiblePath end),
     screenshotPath: (if $screenshotPath == "" then null else $screenshotPath end)
   }')"
+
+result_path="$(ios_wda_write_json_artifact "${prefix}-result" "${payload}" "${output_dir}")"
+payload="$(printf '%s\n' "${payload}" | jq --arg resultPath "${result_path}" '. + {resultPath: $resultPath}')"
 
 ios_wda_emit_json "${payload}"

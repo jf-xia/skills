@@ -148,14 +148,14 @@ ios_wda_choose_device() {
 ios_wda_status_json() {
   local host="${1:-${IOS_WDA_DEFAULT_HOST}}"
   local port="${2:-${IOS_WDA_DEFAULT_PORT}}"
-  curl -sf "http://${host}:${port}/status"
+  curl --max-time 5 -sf "http://${host}:${port}/status"
 }
 
 ios_wda_session_source() {
   local session_id="$1"
   local host="${2:-${IOS_WDA_DEFAULT_HOST}}"
   local port="${3:-${IOS_WDA_DEFAULT_PORT}}"
-  curl -sf "http://${host}:${port}/session/${session_id}/source"
+  curl --max-time 15 -sf "http://${host}:${port}/session/${session_id}/source"
 }
 
 ios_wda_make_run_dir() {
@@ -164,9 +164,101 @@ ios_wda_make_run_dir() {
   printf '%s\n' "${run_dir}"
 }
 
+ios_wda_slugify_label() {
+  local label="$1"
+  printf '%s\n' "${label}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//'
+}
+
+ios_wda_use_run_dir() {
+  local requested_run_dir="${1:-}"
+  local reset_sequence="false"
+  local current_run_dir
+  local run_dir
+  local tmp_file
+
+  ios_wda_init_cache_file
+  current_run_dir="$(ios_wda_cache_get '.artifacts.lastRunDir')"
+
+  if [[ -n "${requested_run_dir}" ]]; then
+    run_dir="${requested_run_dir}"
+    if [[ "${run_dir}" != "${current_run_dir}" ]]; then
+      reset_sequence="true"
+    fi
+  elif [[ -n "${current_run_dir}" ]]; then
+    run_dir="${current_run_dir}"
+  else
+    run_dir="$(ios_wda_make_run_dir)"
+    reset_sequence="true"
+  fi
+
+  mkdir -p "${run_dir}"
+  tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
+  jq \
+    --arg runDir "${run_dir}" \
+    --argjson resetSequence "${reset_sequence}" \
+    '.artifacts.lastRunDir = $runDir
+    | .artifacts.sequence = (if $resetSequence then 0 else (.artifacts.sequence // 0) end)' \
+    "${IOS_WDA_CACHE_FILE}" >"${tmp_file}"
+  mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
+
+  printf '%s\n' "${run_dir}"
+}
+
+ios_wda_reserve_artifact_path() {
+  local label="$1"
+  local extension="$2"
+  local requested_run_dir="${3:-}"
+  local run_dir
+  local slug
+  local tmp_file
+  local sequence
+
+  run_dir="$(ios_wda_use_run_dir "${requested_run_dir}")"
+  slug="$(ios_wda_slugify_label "${label}")"
+  tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
+  jq '.artifacts.sequence = ((.artifacts.sequence // 0) + 1)' "${IOS_WDA_CACHE_FILE}" >"${tmp_file}"
+  sequence="$(jq -r '.artifacts.sequence' "${tmp_file}")"
+  mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
+
+  printf '%s/%03d-%s.%s\n' "${run_dir}" "${sequence}" "${slug}" "${extension}"
+}
+
+ios_wda_write_json_artifact() {
+  local label="$1"
+  local payload="$2"
+  local requested_run_dir="${3:-}"
+  local path
+
+  path="$(ios_wda_reserve_artifact_path "${label}" "json" "${requested_run_dir}")"
+  printf '%s\n' "${payload}" | jq '.' >"${path}"
+  printf '%s\n' "${path}"
+}
+
 ios_wda_emit_json() {
   local payload="$1"
   printf '%s\n' "${payload}" | jq '.'
+}
+
+ios_wda_wait_for_ready() {
+  local host="$1"
+  local port="$2"
+  local attempts="${3:-30}"
+  local interval="${4:-1}"
+  local status_json
+  local attempt=1
+
+  while [[ "${attempt}" -le "${attempts}" ]]; do
+    if status_json="$(curl --max-time 2 -sf "http://${host}:${port}/status" 2>/dev/null)"; then
+      if [[ "$(printf '%s\n' "${status_json}" | jq -r '.value.ready // false')" == "true" ]]; then
+        printf '%s\n' "${status_json}"
+        return 0
+      fi
+    fi
+    sleep "${interval}"
+    attempt=$((attempt + 1))
+  done
+
+  return 1
 }
 
 ios_wda_try_wda_build() {
@@ -174,58 +266,90 @@ ios_wda_try_wda_build() {
   local project_path="${2:-${IOS_WDA_DEFAULT_PROJECT_PATH}}"
   local scheme="${3:-${IOS_WDA_DEFAULT_SCHEME}}"
   local run_dir="$4"
+  local host="${5:-${IOS_WDA_DEFAULT_HOST}}"
+  local port="${6:-${IOS_WDA_DEFAULT_PORT}}"
   local test_without_building_log="${run_dir}/wda-test-without-building.log"
   local full_test_log="${run_dir}/wda-test.log"
-  local test_without_building_status="failed"
-  local full_test_status="skipped"
+  local status_json=""
+  local xcodebuild_pid=""
 
-  if xcodebuild -project "${project_path}" -scheme "${scheme}" -destination "id=${udid}" test-without-building >"${test_without_building_log}" 2>&1; then
-    test_without_building_status="passed"
-  else
-    if xcodebuild -project "${project_path}" -scheme "${scheme}" -destination "id=${udid}" test >"${full_test_log}" 2>&1; then
-      full_test_status="passed"
-    else
-      full_test_status="failed"
-      printf '%s\n' "$(jq -n \
-        --arg result "failed" \
-        --arg method "test" \
-        --arg projectPath "${project_path}" \
-        --arg scheme "${scheme}" \
-        --arg withoutBuildingLog "${test_without_building_log}" \
-        --arg fullTestLog "${full_test_log}" \
-        --argjson withoutBuildingPassed false \
-        --argjson fullTestPassed false \
-        '{
-          result: $result,
-          method: $method,
-          projectPath: $projectPath,
-          scheme: $scheme,
-          testWithoutBuildingLog: $withoutBuildingLog,
-          fullTestLog: $fullTestLog,
-          withoutBuildingPassed: $withoutBuildingPassed,
-          fullTestPassed: $fullTestPassed
-        }')"
-      return 1
-    fi
+  xcodebuild -project "${project_path}" -scheme "${scheme}" -destination "id=${udid}" test-without-building >"${test_without_building_log}" 2>&1 &
+  xcodebuild_pid="$!"
+  if status_json="$(ios_wda_wait_for_ready "${host}" "${port}" 30)"; then
+    printf '%s\n' "$(jq -n \
+      --arg result "passed" \
+      --arg method "test-without-building" \
+      --arg projectPath "${project_path}" \
+      --arg scheme "${scheme}" \
+      --arg withoutBuildingLog "${test_without_building_log}" \
+      --argjson withoutBuildingPassed true \
+      --argjson fullTestPassed false \
+      --argjson pid "${xcodebuild_pid}" \
+      --argjson status "$status_json" \
+      '{
+        result: $result,
+        method: $method,
+        projectPath: $projectPath,
+        scheme: $scheme,
+        testWithoutBuildingLog: $withoutBuildingLog,
+        fullTestLog: null,
+        withoutBuildingPassed: $withoutBuildingPassed,
+        fullTestPassed: $fullTestPassed,
+        xcodebuildPid: $pid,
+        status: $status
+      }')"
+    return 0
   fi
+  kill "${xcodebuild_pid}" >/dev/null 2>&1 || true
+
+  xcodebuild -project "${project_path}" -scheme "${scheme}" -destination "id=${udid}" test >"${full_test_log}" 2>&1 &
+  xcodebuild_pid="$!"
+  if status_json="$(ios_wda_wait_for_ready "${host}" "${port}" 30)"; then
+    printf '%s\n' "$(jq -n \
+      --arg result "passed" \
+      --arg method "test" \
+      --arg projectPath "${project_path}" \
+      --arg scheme "${scheme}" \
+      --arg withoutBuildingLog "${test_without_building_log}" \
+      --arg fullTestLog "${full_test_log}" \
+      --argjson withoutBuildingPassed false \
+      --argjson fullTestPassed true \
+      --argjson pid "${xcodebuild_pid}" \
+      --argjson status "$status_json" \
+      '{
+        result: $result,
+        method: $method,
+        projectPath: $projectPath,
+        scheme: $scheme,
+        testWithoutBuildingLog: $withoutBuildingLog,
+        fullTestLog: $fullTestLog,
+        withoutBuildingPassed: $withoutBuildingPassed,
+        fullTestPassed: $fullTestPassed,
+        xcodebuildPid: $pid,
+        status: $status
+      }')"
+    return 0
+  fi
+  kill "${xcodebuild_pid}" >/dev/null 2>&1 || true
 
   printf '%s\n' "$(jq -n \
-    --arg result "passed" \
-    --arg method "$([[ "${test_without_building_status}" == "passed" ]] && printf 'test-without-building' || printf 'test')" \
+    --arg result "failed" \
+    --arg method "test" \
     --arg projectPath "${project_path}" \
     --arg scheme "${scheme}" \
     --arg withoutBuildingLog "${test_without_building_log}" \
-    --arg fullTestLog "$([[ "${full_test_status}" == "passed" ]] && printf '%s' "${full_test_log}" || printf '')" \
-    --argjson withoutBuildingPassed "$([[ "${test_without_building_status}" == "passed" ]] && printf 'true' || printf 'false')" \
-    --argjson fullTestPassed "$([[ "${full_test_status}" == "passed" ]] && printf 'true' || printf 'false')" \
+    --arg fullTestLog "${full_test_log}" \
+    --argjson withoutBuildingPassed false \
+    --argjson fullTestPassed false \
     '{
       result: $result,
       method: $method,
       projectPath: $projectPath,
       scheme: $scheme,
       testWithoutBuildingLog: $withoutBuildingLog,
-      fullTestLog: (if $fullTestLog == "" then null else $fullTestLog end),
+      fullTestLog: $fullTestLog,
       withoutBuildingPassed: $withoutBuildingPassed,
       fullTestPassed: $fullTestPassed
     }')"
+  return 1
 }

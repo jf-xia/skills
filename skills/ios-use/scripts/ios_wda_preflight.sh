@@ -13,6 +13,7 @@ force_refresh="false"
 project_path="${IOS_WDA_DEFAULT_PROJECT_PATH}"
 scheme="${IOS_WDA_DEFAULT_SCHEME}"
 auto_launch_wda="true"
+run_dir=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       auto_launch_wda="false"
       shift
       ;;
+    --run-dir)
+      run_dir="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 1
@@ -57,6 +62,7 @@ done
 
 ios_wda_require_tools jq curl xcrun lsof ps awk sed grep
 ios_wda_init_cache_file
+run_dir="$(ios_wda_use_run_dir "${run_dir}")"
 
 cached_udid=""
 if [[ "${force_refresh}" != "true" ]]; then
@@ -97,9 +103,11 @@ if [[ -n "${listener_pid}" ]]; then
 fi
 
 wda_status=""
+wda_status_path=""
 wda_ready="false"
 if wda_status="$(ios_wda_status_json "${host}" "${port}" 2>/dev/null)"; then
   wda_ready="$(printf '%s\n' "${wda_status}" | jq -r '.value.ready // false')"
+  wda_status_path="$(ios_wda_write_json_artifact "preflight-status" "${wda_status}" "${run_dir}")"
 fi
 
 if [[ "${wda_ready}" == "true" && -n "${listener_udid}" && "${listener_udid}" != "${device_udid}" ]]; then
@@ -125,9 +133,8 @@ fi
 
 wda_launch_attempted="false"
 wda_launch_result='{}'
-run_dir=""
+wda_launch_result_path=""
 if [[ "${wda_ready}" != "true" && "${auto_launch_wda}" == "true" ]]; then
-  run_dir="$(ios_wda_make_run_dir)"
   wda_launch_attempted="true"
   if wda_launch_result="$(ios_wda_try_wda_build "${device_udid}" "${project_path}" "${scheme}" "${run_dir}")"; then
     if [[ -n "${listener_pid}" ]]; then
@@ -141,8 +148,10 @@ if [[ "${wda_ready}" != "true" && "${auto_launch_wda}" == "true" ]]; then
     forward_restarted="true"
     if wda_status="$(ios_wda_status_json "${host}" "${port}" 2>/dev/null)"; then
       wda_ready="$(printf '%s\n' "${wda_status}" | jq -r '.value.ready // false')"
+      wda_status_path="$(ios_wda_write_json_artifact "preflight-status" "${wda_status}" "${run_dir}")"
     fi
   fi
+  wda_launch_result_path="$(ios_wda_write_json_artifact "preflight-wda-launch" "${wda_launch_result}" "${run_dir}")"
 fi
 
 status_reason="ready"
@@ -178,6 +187,8 @@ cache_payload="$(jq -n \
   --arg projectPath "${project_path}" \
   --arg scheme "${scheme}" \
   --arg runDir "${run_dir}" \
+  --arg statusPath "${wda_status_path}" \
+  --arg launchResultPath "${wda_launch_result_path}" \
   --argjson launchAttempted "${wda_launch_attempted}" \
   --argjson launchResult "${wda_launch_result}" \
   '{
@@ -204,6 +215,8 @@ cache_payload="$(jq -n \
         scheme: $scheme,
         launchAttempted: $launchAttempted,
         launchResult: $launchResult,
+        statusPath: (if $statusPath == "" then null else $statusPath end),
+        launchResultPath: (if $launchResultPath == "" then null else $launchResultPath end),
         lastLaunchRunDir: (if $runDir == "" then null else $runDir end)
       }
       + (if $statusJson == "" then {} else {
@@ -236,6 +249,8 @@ result_payload="$(jq -n \
   --arg projectPath "${project_path}" \
   --arg scheme "${scheme}" \
   --arg runDir "${run_dir}" \
+  --arg statusPath "${wda_status_path}" \
+  --arg launchResultPath "${wda_launch_result_path}" \
   --argjson launchAttempted "${wda_launch_attempted}" \
   --argjson launchResult "${wda_launch_result}" \
   '{
@@ -266,9 +281,14 @@ result_payload="$(jq -n \
       scheme: $scheme,
       launchAttempted: $launchAttempted,
       launchResult: $launchResult,
+      statusPath: (if $statusPath == "" then null else $statusPath end),
+      launchResultPath: (if $launchResultPath == "" then null else $launchResultPath end),
       lastLaunchRunDir: (if $runDir == "" then null else $runDir end)
     },
     wdaReady: $wdaReady
   }')"
+
+result_path="$(ios_wda_write_json_artifact "preflight-result" "${result_payload}" "${run_dir}")"
+result_payload="$(printf '%s\n' "${result_payload}" | jq --arg resultPath "${result_path}" '. + {resultPath: $resultPath}')"
 
 ios_wda_emit_json "${result_payload}"

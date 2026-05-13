@@ -13,6 +13,7 @@
 | `xcodebuild` 启动失败或 Code 65 | 签名错误、Bundle ID 冲突、团队 ID 缺失 | 修复签名、改唯一 Bundle ID、确认开发团队 |
 | `curl /status` 无响应 | WDA 未启动、端口未转发、`iproxy` 中断 | 重启 WDA，检查 `iproxy 8100 8100 <UDID>` |
 | `curl /status` 能连上 `8100` 但立刻 `connection reset by peer` | 本机端口被旧转发占用、`iproxy` 指向错误设备、设备端没有对应 WDA | 先查 `lsof` 和 `ps` 确认 `8100` 的监听者与目标设备，再重建转发 |
+| `iproxy` 持续打印 `New connection` / `Requesting connection` | 本机正在连续做 WDA 健康检查、截图或页面树请求 | 先看 `curl /status` 是否仍返回 200；如果成功，这些日志通常是正常流量，不需要额外恢复 |
 | `xcodebuild` 说设备不存在，但别的工具还能列出该设备 | 工具间缓存或枚举口径不同，使用了错误 UDID | 回到 `xcrun xctrace list devices` 和 `xcodebuild` destination 列表，改用 Xcode 当前可见设备 |
 | `Session Not Created` | 能力集错误、App 路径无效、设备未准备好 | 精简 capabilities，确认 `bundleId` / `app` / `udid` |
 | `No Such Driver` / 404 | session 已失效 | 重建 session，不要继续用旧 `sessionId` |
