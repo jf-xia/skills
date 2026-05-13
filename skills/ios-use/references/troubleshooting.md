@@ -12,12 +12,15 @@
 | --- | --- | --- |
 | `xcodebuild` 启动失败或 Code 65 | 签名错误、Bundle ID 冲突、团队 ID 缺失 | 修复签名、改唯一 Bundle ID、确认开发团队 |
 | `curl /status` 无响应 | WDA 未启动、端口未转发、`iproxy` 中断 | 重启 WDA，检查 `iproxy 8100 8100 <UDID>` |
+| `curl /status` 能连上 `8100` 但立刻 `connection reset by peer` | 本机端口被旧转发占用、`iproxy` 指向错误设备、设备端没有对应 WDA | 先查 `lsof` 和 `ps` 确认 `8100` 的监听者与目标设备，再重建转发 |
+| `xcodebuild` 说设备不存在，但别的工具还能列出该设备 | 工具间缓存或枚举口径不同，使用了错误 UDID | 回到 `xcrun xctrace list devices` 和 `xcodebuild` destination 列表，改用 Xcode 当前可见设备 |
 | `Session Not Created` | 能力集错误、App 路径无效、设备未准备好 | 精简 capabilities，确认 `bundleId` / `app` / `udid` |
 | `No Such Driver` / 404 | session 已失效 | 重建 session，不要继续用旧 `sessionId` |
 | `Element Not Visible` | 元素在屏外、被遮挡、动画未结束 | 先滚动或等待稳定，再重试 |
 | `Stale Element Reference` | 页面树变化，元素缓存失效 | 重新获取 source 并重新查找元素 |
 | `Timeout` / 408 | 页面过慢、等待条件不合理 | 拉长连接超时，拆分动作，减少全树扫描 |
 | 输入无效 | 未聚焦、键盘未起、控件类型特殊 | 先点击聚焦，再用正确输入接口 |
+| `/wda/apps/activate` 返回成功，但前台仍是 SpringBoard | 目标 App 未运行、系统 App 激活链路未真正切前台 | 先查 `/wda/activeAppInfo`，必要时用 `ios launch <bundleId>` 启动，再重新验证 |
 
 ## 错误码与异常类型映射
 
@@ -44,8 +47,10 @@
 
 ## 真机专项问题
 - 先用 Xcode 原生命令确认设备仍在线。
+- 如果 `xcodebuildmcp`、`go-ios`、旧日志里的 UDID 与 Xcode 当前看到的不一致，以 Xcode 可用 destination 里的在线设备为准。
 - 如果已构建过 WDA，优先 `test-without-building`；只有启动失败时再回退到完整 `test`。
 - 对真机并行任务，确认本地端口和 `iproxy` 没有冲突。
+- 对单机单设备场景，仍要检查本机 `8100` 是否残留上一次会话的 `iproxy`，不要默认当前监听就是本次目标设备。
 
 ## 输入与键盘专项问题
 - 文本框无响应时，先确认元素是否已经成为第一响应者。

@@ -11,6 +11,11 @@
 | `GET` | `/wda/apps/list` | 列出活动应用 |
 | `POST` | `/url` | 打开 URL，可指定包名 |
 
+说明：
+- `/wda/apps/activate` 更适合把已运行应用切回前台。
+- 如果目标 App 尚未运行，或者是备忘录这类系统 App，`activate` 返回成功后仍要立即用 `/wda/activeAppInfo`、页面树或截图确认前台是否真的切换成功。
+- 如果前台仍然是 SpringBoard，优先回退到系统级启动，例如 `ios launch <bundleId>`，再重新验证前台应用。
+
 应用状态枚举：
 
 | 值 | 常量 | 含义 |
@@ -81,5 +86,7 @@ await agent.runWdaRequest('GET', '/wda/getPasteboard')
 
 ## 使用建议
 - 切应用后马上校验前台状态，避免下一步操作还落在旧应用上。
+- 系统 App 或首次拉起的 App，不要只看 `/wda/apps/activate` 的返回值；要结合 `/wda/activeAppInfo` 判断是否仍停留在 SpringBoard。
+- 如果 WDA 激活接口没有真正把 App 带到前台，优先用系统级 CLI 直接启动，再继续做结构化操作。
 - 系统弹窗优先读按钮列表后再决定 `accept` 或 `dismiss`，不要仅凭截图猜测。
 - 设备信息、屏幕信息和应用状态适合做动作后的确认，不要只依赖视觉结果。

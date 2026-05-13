@@ -20,19 +20,22 @@ user-invocable: true
 
 ## 标准流程
 1. 先创建本次操作的 `./tmp/<yymmddhhmmss>/` 临时目录，用于集中保存截图、日志、脚本和其他中间文件。
-2. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态。
+2. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态；真机场景先用 Xcode 可见设备对齐 UDID，不要直接复用上一次命令里的旧设备号。
 3. 如果设备上已有可用 WDA，优先复用已有构建或 `test-without-building` 路径；否则再走完整 `xcodebuild test` 和签名修复流程。
 4. 建立 session 后，优先通过 `/source`、`/wda/accessibleSource` 和元素 API 做结构化交互；需要具体路由时查 [命令参考](./references/command-reference.md)。
 5. 输入文本时，优先使用元素级 `/element/:uuid/value`；仅在焦点已明确时使用 `/wda/keys`。细节见 [输入与键盘](./references/input-and-keyboard.md)。
-6. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)。
+6. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)；切应用后必须验证前台 App，必要时回退到系统级启动。
 7. 当可访问性信息不足、页面动画频繁或需要视觉闭环时，退回截图/坐标策略，并按 [视觉驱动与性能](./references/visual-and-performance.md) 调优。
 8. 任何 404、408、Session Not Created、元素不可见、输入失败等异常，都先按 [故障排查](./references/troubleshooting.md) 执行最短恢复，再查看 [限制与取舍](./references/limitations.md) 判断是否需要切换策略。
 
 ## 决策要点
 - 真机优先检查签名、`iproxy`、`xcodebuild`；模拟器优先检查 `simctl` 状态和 App 安装。
+- 真机多工具枚举出来的设备 ID 不一致时，以 `xcrun xctrace list devices` 和 `xcodebuild` 可用 destination 中实际在线的设备为准。
+- 真机启动前先查本机 `8100` 端口是否已有监听；如果旧 `iproxy` 仍指向别的设备，先清理再继续。
 - 有稳定可访问性节点时优先元素定位；没有稳定节点时退回截图加坐标点击。
 - 需要对具体元素输入时用元素级输入；只是向当前焦点发送键盘事件时用 `/wda/keys`。
 - 需要复现系统级场景时优先使用 `/wda/apps/*`、`/alert/*`、`/wda/lock`、`/orientation` 等专用接口，不要硬编码坐标。
+- `/wda/apps/activate` 成功并不等于目标 App 已经在前台；系统 App 或未运行 App 要结合 `/wda/activeAppInfo`、截图或系统级 `ios launch` 路径确认。
 
 ## 信息不足时的代码库追问
 - 当已经提供的信息不足以继续判断，或者需要确认更底层的实现细节、路由来源、异常来源、参数语义时，可以使用 deepwiki 的 CLI 直接询问 WebDriverAgent 代码库。
