@@ -30,7 +30,6 @@
 | `POST` | `/alert/dismiss` | 关闭弹窗，可指定按钮名 |
 | `GET` | `/wda/alert/buttons` | 列出弹窗按钮 |
 
-如果权限弹窗是已知场景，可在 session 能力集中启用 `appium:autoAcceptAlerts`。
 
 ## 锁屏与方向
 

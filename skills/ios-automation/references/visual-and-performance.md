@@ -50,15 +50,6 @@ await agent.runWdaRequest('GET', '/wda/getPasteboard')
 - 先走 `/source`、元素 API 和 `/screenshot` 主路径，只有主路径信息不足时再启用扩展能力。
 - 扩展能力一旦失败，优先回退到稳定主路径，而不是继续堆叠实验性接口。
 
-## 性能调优参数
-
-| 目标 | 参数 | 典型效果 |
-| --- | --- | --- |
-| 提高扫描速度 | `appium:simpleIsVisibleCheck: true` | 降低可见性计算成本 |
-| 规避慢设备超时 | `appium:wdaConnectionTimeout: 240000` | 为低性能真机留足响应时间 |
-| 减少动作等待 | `appium:waitForQuiescence: false` | 不等待动画完全静止 |
-| 多设备并行 | `appium:wdaLocalPort` | 避免本地端口冲突 |
-
 ## MJPEG 与端口转发
 - WDA 的 MJPEG 流常用 9100 端口，适合低延迟连续画面分析。
 - 真机使用 MJPEG 时，同样需要显式处理端口转发。

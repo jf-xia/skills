@@ -5,7 +5,6 @@
 
 ## 启动前检查
 - Xcode 与 Command Line Tools 可用。
-- 如果依赖 Appium 生态，确认 Node.js、npm 与 Carthage 环境可用。
 - 真机场景额外确认 `ios-deploy` 与 `iproxy` 可用。
 - 对真机使用唯一 Bundle ID 和有效的开发团队 ID，避免常见的签名冲突。
 
@@ -56,17 +55,17 @@ curl -X POST http://localhost:8100/session \
   }'
 ```
 
-## 常用能力集
+## 常见参数与归属
 
-| 字段 | 作用 | 何时使用 |
-| --- | --- | --- |
-| `appium:automationName` | 指定 `XCUITest` | Appium 驱动模式下固定需要 |
-| `appium:bundleId` | 冷启动目标应用 | 已知包名且不传 `.app` 路径时 |
-| `appium:app` | 安装或启动指定应用包 | 本地有 `.app` 或 `.ipa` 时 |
-| `appium:udid` | 绑定具体设备 | 多设备并行或真机场景 |
-| `appium:usePreinstalledWDA` | 复用已装好的 WDA | 追求更快启动时 |
-| `appium:wdaLocalPort` | 指定本地映射端口 | 多设备并行避免冲突 |
-| `appium:autoAcceptAlerts` | 自动接受系统弹窗 | 环境初始化时常用 |
+| 字段 | 归属 | 作用 | 何时使用 |
+| --- | --- | --- | --- |
+| `platformName` | 裸 WDA 通用 | 指定平台 | 创建 session 时通常都会传 |
+| `deviceName` | 裸 WDA 通用 | 标记目标设备名称 | 需要补充设备描述时 |
+| `bundleId` | 裸 WDA 直连常用 | 冷启动目标应用 | 已知包名且不传 `.app` 路径时 |
+| `app` | 裸 WDA 直连常用 | 安装或启动指定应用包 | 本地有 `.app` 或 `.ipa` 时 |
+| `udid` | 裸 WDA 直连常用 | 绑定具体设备 | 多设备并行或真机场景 |
+
+如果你是直接对 WDA 的 `POST /session` 发请求，参考上面的示例使用无前缀字段
 
 ## 健康检查接口
 

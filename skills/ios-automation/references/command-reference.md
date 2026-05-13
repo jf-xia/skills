@@ -31,8 +31,6 @@
 | `GET` | `/session` | 查询当前活动会话 |
 | `GET` | `/status` | 查询 WDA 服务状态，无需 session |
 | `GET` | `/wda/healthcheck` | 轻量健康检查，无需 session |
-| `GET` | `/appium/settings` | 获取当前设置 |
-| `POST` | `/appium/settings` | 更新设置 |
 
 ## 元素属性与基础动作
 
