@@ -71,6 +71,15 @@ if [[ -z "${session_id}" ]]; then
   exit 2
 fi
 
+# 检查是否需要使用设备 IP（WiFi 连接场景）
+device_ip="$(ios_wda_cache_get '.connection.deviceIp')"
+if [[ -n "${device_ip}" ]]; then
+  # 尝试使用设备 IP 连接
+  if curl --max-time 5 -sf "http://${device_ip}:${port}/status" >/dev/null 2>&1; then
+    host="${device_ip}"
+  fi
+fi
+
 if ! ios_wda_session_source "${session_id}" "${host}" "${port}" >/dev/null 2>&1; then
   payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" --arg sessionId "${session_id}" '{ok: false, checkedAt: $checkedAt, reason: "invalid-session", sessionId: $sessionId}')"
   ios_wda_emit_json "${payload}"

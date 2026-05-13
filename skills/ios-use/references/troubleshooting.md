@@ -25,7 +25,7 @@
 | `/wda/apps/activate` 返回成功，但前台仍是 SpringBoard | 目标 App 未运行、系统 App 激活链路未真正切前台 | 先查 `/wda/activeAppInfo`，必要时用 `ios launch <bundleId>` 启动，再重新验证 |
 | 点击其他 App 后前台仍是 SpringBoard，但截图出现 shield / blocked 覆盖层 | 这不是点击失败，而是系统策略或限制正在拦截目标 App | 读取页面树或截图确认遮罩内容，再结合下游行为把它判定为“规则已生效” |
 | 点了 `Save` 但后续行为仍沿用旧规则 | App 层校验拒绝了本次配置、时间窗仍包含当前时间，或表单只是局部更新未持久化 | 立即重读表单值、查找错误文案或提示，再做一次下游行为验证，不要把按钮点击成功当成规则生效 |
-| 缓存文件存在，但本次仍无法继续 | 缓存里的 UDID、`iproxy` 目标或 `sessionId` 已失效 | 先跑 `ios_wda_preflight.sh`，按输出决定是否重建转发或重建 session |
+| 缓存文件存在，但本次仍无法继续 | 缓存里的 UDID、`iproxy` 目标或 `sessionId` 已失效 | 先跑 `ios_wda_init.sh`，按输出决定是否重建转发或重建 session |
 | 输入成功，但正文内容和原始文本不完全一致 | 应用自动编号、自动格式化或富文本规则介入 | 先区分是否为 App 自动改写，再决定清空重写或接受格式化结果 |
 
 ## 错误码与异常类型映射
@@ -58,6 +58,54 @@
 - 如果已构建过 WDA，优先 `test-without-building`；只有启动失败时再回退到完整 `test`。
 - 对真机并行任务，确认本地端口和 `iproxy` 没有冲突。
 - 对单机单设备场景，仍要检查本机 `8100` 是否残留上一次会话的 `iproxy`，不要默认当前监听就是本次目标设备。
+
+### 诊断命令
+
+```bash
+# 检查设备是否在线
+xcrun xctrace list devices
+
+# 检查 iproxy 状态
+lsof -i :8100
+ps aux | grep iproxy
+
+# 检查 WDA 状态（本地）
+curl -s http://127.0.0.1:8100/status
+
+# 检查 WDA 状态（设备 IP）
+curl -s http://192.168.1.107:8100/status
+
+# 检查缓存文件
+cat ./tmp/ios-use-cache.json | jq '.'
+
+# 检查设备 IP
+cat ./tmp/ios-use-cache.json | jq '.connection.deviceIp'
+
+# 检查 WDA 日志
+cat ./tmp/*/wda-background.log
+```
+
+## 信息不足时的代码库追问
+- 当已经提供的信息不足以继续判断，或者需要确认更底层的实现细节、路由来源、异常来源、参数语义时，可以使用 deepwiki 的 CLI 直接询问 WebDriverAgent 代码库。
+- 推荐仓库：`appium/WebDriverAgent`。
+- 常用命令形式：`dw aq -r "appium/WebDriverAgent" -q "<你的问题>"`
+
+使用示例：
+
+```bash
+dw aq -r "appium/WebDriverAgent" -q "raw REST probing 举例说明"
+dw aq -r "appium/WebDriverAgent" -q "POST /session 在 WebDriverAgent 里经过哪些 handler 和对象"
+dw aq -r "appium/WebDriverAgent" -q "element/:uuid/value 的输入链路和 frequency 参数是怎么生效的"
+dw aq -r "appium/WebDriverAgent" -q "No Such Driver 和 Stale Element 在代码里分别从哪里抛出"
+dw aq -r "appium/WebDriverAgent" -q "waitForQuiescence 相关逻辑在哪些文件里，具体影响哪些动作"
+dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径有什么差异"
+```
+
+适合追问的内容：
+- 某个 REST 路由由哪个 handler、command 或 category 实现。
+- 某个异常、HTTP 状态码或错误文本是在什么条件下抛出的。
+- 某个 capability、setting 或内部参数在代码里的实际作用范围。
+- 某个接口在裸 WDA、上层 driver 封装和 XCTest 底层之间分别由谁负责。
 
 ## 输入与键盘专项问题
 - 文本框无响应时，先确认元素是否已经成为第一响应者。

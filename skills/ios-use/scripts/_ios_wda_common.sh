@@ -145,10 +145,41 @@ ios_wda_choose_device() {
   printf '%s\n' "${devices}" | head -n 1
 }
 
+# 从 WDA 状态响应中提取设备 IP
+ios_wda_extract_device_ip() {
+  local status_json="$1"
+  printf '%s\n' "${status_json}" | jq -r '.value.ios.ip // empty' 2>/dev/null || true
+}
+
+# 尝试连接到设备 IP（用于 WiFi 连接场景）
+ios_wda_try_device_ip() {
+  local device_ip="$1"
+  local port="${2:-${IOS_WDA_DEFAULT_PORT}}"
+  curl --max-time 5 -sf "http://${device_ip}:${port}/status" 2>/dev/null || true
+}
+
 ios_wda_status_json() {
   local host="${1:-${IOS_WDA_DEFAULT_HOST}}"
   local port="${2:-${IOS_WDA_DEFAULT_PORT}}"
-  curl --max-time 5 -sf "http://${host}:${port}/status"
+  local result=""
+  
+  # 先尝试本地连接（通过 iproxy）
+  if result="$(curl --max-time 5 -sf "http://${host}:${port}/status" 2>/dev/null)"; then
+    printf '%s\n' "${result}"
+    return 0
+  fi
+  
+  # 如果本地连接失败，尝试从缓存中获取设备 IP
+  local cached_device_ip
+  cached_device_ip="$(ios_wda_cache_get '.connection.deviceIp')"
+  if [[ -n "${cached_device_ip}" ]]; then
+    if result="$(curl --max-time 5 -sf "http://${cached_device_ip}:${port}/status" 2>/dev/null)"; then
+      printf '%s\n' "${result}"
+      return 0
+    fi
+  fi
+  
+  return 1
 }
 
 ios_wda_session_source() {

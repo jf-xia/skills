@@ -13,75 +13,253 @@ user-invocable: true
 - 控制应用生命周期、系统弹窗、锁屏、方向、位置等设备能力
 - 排查签名、连接、无 session、元素失效、键盘和超时问题
 
-## 开始前准备
-- 每次开始使用本技能前，先在项目根目录创建本次操作的临时工作目录：`mkdir -p ./tmp/$(date +%y%m%d%H%M%S)`。
-- 将当前操作产生的截图、日志、临时脚本和其他中间文件统一放在该时间戳目录下，避免散落在仓库其他位置。
-- 这样做的目的：集中保留调试证据、按时间快速定位一次操作、减少临时文件混乱和遗漏。
+## 快速路径（推荐）
 
-## 快速路径
-当你只是想尽快复用当前真机/WDA，而不是从零排查时，优先走下面这条路径：
-
-1. 运行 `bash skills/ios-use/scripts/ios_wda_preflight.sh --ensure-forward`。
-2. 如果输出里的 `wdaReady` 是 `true`，直接继续，不要重新枚举所有历史命令。
-3. 如果输出里的 `nextAction` 不是 `reuse`，`preflight` 会先自动尝试 `xcodebuild ... test-without-building`，失败后再回退到完整 `xcodebuild ... test`，日志落在对应的 `tmp/<timestamp>/` 目录下。
-4. 需要 session 时，运行 `bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id <bundleId>`。
-5. 需要抓页面证据时，运行 `bash skills/ios-use/scripts/ios_wda_snapshot.sh`。
-6. 需要向某个元素输入文本时，运行 `bash skills/ios-use/scripts/ios_wda_type.sh --using <strategy> --locator <value> --text-file <path>`。
-
-
-## 标准流程
-1. 先创建本次操作的 `./tmp/<yymmddhhmmss>/` 临时目录，用于集中保存截图、日志、脚本和其他中间文件。
-2. 优先使用真机, 如果找不到使用模拟器，并按 [启动与 Session](./references/startup-and-session.md) 检查依赖、设备 ID、端口和 WDA 健康状态；真机场景先用脚本校验 `./tmp/ios-use-cache.json`，只有缓存失效时才回退到从头检查。
-3. 如果设备上已有可用 WDA，优先复用已有构建或 `test-without-building` 路径；否则再走完整 `xcodebuild test` 和签名修复流程。
-4. 建立 session 后，优先通过 `/source`、`/wda/accessibleSource` 和元素 API 做结构化交互；需要具体路由时查 [命令参考](./references/command-reference.md)。
-5. 输入文本时，优先使用元素级 `/element/:uuid/value`；仅在焦点已明确时使用 `/wda/keys`。细节见 [输入与键盘](./references/input-and-keyboard.md)。
-6. 需要切应用、处理系统弹窗、锁屏、方向、位置或设备信息时，查 [应用与设备控制](./references/app-and-device-control.md)；切应用后必须验证前台 App。需要回主屏时优先 `/wda/homescreen` 或 `pressButton(home)`，不要把激活 `com.apple.springboard` 当成稳定退场路径。
-7. 修改会影响系统行为的 App 状态后，例如时间窗、限制策略、权限或 shield 文案，不能只看按钮点击成功；还要同时验证表单是否真正持久化，以及下游行为是否已经变化。
-8. 当可访问性信息不足、页面动画频繁或需要视觉闭环时，退回截图/坐标策略，并按 [视觉驱动与性能](./references/visual-and-performance.md) 调优。
-9. 任何 404、408、Session Not Created、元素不可见、输入失败或“保存后行为未变化”等异常，都先按 [故障排查](./references/troubleshooting.md) 执行最短恢复，再查看 [限制与取舍](./references/limitations.md) 判断是否需要切换策略。
-
-## 决策要点
-- 真机优先检查签名、`iproxy`、`xcodebuild`；模拟器优先检查 `simctl` 状态和 App 安装。
-- 真机多工具枚举出来的设备 ID 不一致时，以 `xcrun xctrace list devices` 和 `xcodebuild` 可用 destination 中实际在线的设备为准。
-- 真机启动前先查本机 `8100` 端口是否已有监听；如果旧 `iproxy` 仍指向别的设备，先清理再继续。
-- 有稳定可访问性节点时优先元素定位；没有稳定节点时退回截图加坐标点击。
-- 需要对具体元素输入时用元素级输入；只是向当前焦点发送键盘事件时用 `/wda/keys`。
-- `PickerWheel` 不要当普通文本框处理；优先用 `/wda/pickerwheel/:uuid/select`，并记住它每次调用都会先沿 `order` 方向移动一步，再判断是否达到期望值。
-- 需要复现系统级场景时优先使用 `/wda/apps/*`、`/alert/*`、`/wda/lock`、`/orientation` 等专用接口，不要硬编码坐标。
-- `/wda/apps/activate` 成功并不等于目标 App 已经在前台；系统 App 或未运行 App 要结合 `/wda/activeAppInfo`、截图或系统级 `ios launch` 路径确认。
-- 遇到 12 小时制时间选择器时，先读取设备上实际显示的 `AM/PM`，再判断“当前时间是否命中窗口”；不要只按宿主机时间或日志时区推断。
-
-## 信息不足时的代码库追问
-- 当已经提供的信息不足以继续判断，或者需要确认更底层的实现细节、路由来源、异常来源、参数语义时，可以使用 deepwiki 的 CLI 直接询问 WebDriverAgent 代码库。
-- 推荐仓库：`appium/WebDriverAgent`。
-- 常用命令形式：`dw aq -r "appium/WebDriverAgent" -q "<你的问题>"`
-
-使用示例：
+**最简单的使用方式：** 只需两条命令即可开始自动化操作。
 
 ```bash
-dw aq -r "appium/WebDriverAgent" -q "raw REST probing 举例说明"
-dw aq -r "appium/WebDriverAgent" -q "POST /session 在 WebDriverAgent 里经过哪些 handler 和对象"
-dw aq -r "appium/WebDriverAgent" -q "element/:uuid/value 的输入链路和 frequency 参数是怎么生效的"
-dw aq -r "appium/WebDriverAgent" -q "No Such Driver 和 Stale Element 在代码里分别从哪里抛出"
-dw aq -r "appium/WebDriverAgent" -q "waitForQuiescence 相关逻辑在哪些文件里，具体影响哪些动作"
-dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径有什么差异"
+# 1. 创建 session 并启动应用（自动处理设备检查、iproxy、WDA）
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences
+
+# 2. 获取页面源码
+curl -s http://<DEVICE_IP>:8100/session/<SESSION_ID>/source | jq '.value'
 ```
 
-适合追问的内容：
-- 某个 REST 路由由哪个 handler、command 或 category 实现。
-- 某个异常、HTTP 状态码或错误文本是在什么条件下抛出的。
-- 某个 capability、setting 或内部参数在代码里的实际作用范围。
-- 某个接口在裸 WDA、上层 driver 封装和 XCTest 底层之间分别由谁负责。
+**详细步骤：**
+
+```bash
+# 1. 初始化（检查设备、启动 iproxy、启动 WDA）
+bash skills/ios-use/scripts/ios_wda_init.sh
+
+# 2. 创建 session 并启动应用
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences
+
+# 3. 获取页面源码
+bash skills/ios-use/scripts/ios_wda_snapshot.sh
+```
+
+## 详细使用流程
+
+### 1. 初始化
+
+```bash
+# 自动检查设备、启动 iproxy、启动 WDA
+bash skills/ios-use/scripts/ios_wda_init.sh
+
+# 指定设备
+bash skills/ios-use/scripts/ios_wda_init.sh --udid 00008140-001465202E10801C
+
+# 指定 host 和 port
+bash skills/ios-use/scripts/ios_wda_init.sh --host 192.168.1.107 --port 8100
+```
+
+**输出说明：**
+```json
+{
+  "ok": true,
+  "device": {
+    "name": "iPhone",
+    "udid": "00008140-001465202E10801C",
+    "ip": "192.168.1.107"
+  },
+  "wda": {
+    "ready": true,
+    "runDir": "./tmp/260513210741"
+  }
+}
+```
+
+### 2. 创建 Session
+
+```bash
+# 创建 session 并启动应用
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences
+
+# 强制创建新 session
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences --force-new
+
+# 删除 session
+bash skills/ios-use/scripts/ios_wda_session.sh --delete
+```
+
+**输出说明：**
+```json
+{
+  "ok": true,
+  "action": "created",
+  "sessionId": "90F28444-A1FC-4FA6-BAF1-F0584F2B9E14",
+  "bundleId": "com.apple.Preferences",
+  "activeApp": {
+    "value": {
+      "bundleId": "com.apple.Preferences"
+    }
+  }
+}
+```
+
+### 3. 获取页面信息
+
+```bash
+# 获取页面源码、可访问性信息、截图
+bash skills/ios-use/scripts/ios_wda_snapshot.sh
+
+# 只获取源码
+bash skills/ios-use/scripts/ios_wda_snapshot.sh --only-source
+
+# 只获取截图
+bash skills/ios-use/scripts/ios_wda_snapshot.sh --only-screenshot
+```
+
+### 4. 元素交互
+
+```bash
+# 输入文本
+bash skills/ios-use/scripts/ios_wda_type.sh --using name --locator "Username" --text-file input.txt
+
+# 使用 curl 直接调用 WDA API
+# 获取元素
+curl -s http://<DEVICE_IP>:8100/session/<SESSION_ID>/source | jq '.value'
+
+# 点击元素
+curl -X POST http://<DEVICE_IP>:8100/session/<SESSION_ID>/element/<ELEMENT_ID>/click
+
+# 输入文本
+curl -X POST http://<DEVICE_IP>:8100/session/<SESSION_ID>/element/<ELEMENT_ID>/value \
+  -H 'Content-Type: application/json' \
+  -d '{"value": ["Hello World"]}'
+```
+
+## WiFi 连接场景
+
+当设备通过 WiFi 连接时，脚本会自动：
+
+1. 检测设备 IP 地址
+2. 尝试直接连接设备 IP（如果 iproxy 不可用）
+3. 缓存设备 IP 以便后续使用
+
+**手动指定设备 IP：**
+```bash
+bash skills/ios-use/scripts/ios_wda_init.sh --host 192.168.1.107
+```
+
+## 缓存文件
+
+缓存文件位于 `./tmp/ios-use-cache.json`，包含：
+
+```json
+{
+  "device": {
+    "udid": "00008140-001465202E10801C",
+    "name": "iPhone",
+    "osVersion": "26.4.2"
+  },
+  "connection": {
+    "host": "127.0.0.1",
+    "port": 8100,
+    "deviceIp": "192.168.1.107"
+  },
+  "wda": {
+    "ready": true
+  },
+  "session": {
+    "id": "90F28444-A1FC-4FA6-BAF1-F0584F2B9E14",
+    "bundleId": "com.apple.Preferences"
+  }
+}
+```
+
+## 故障排查
+
+### 1. WDA 无法启动
+
+```bash
+# 检查日志
+cat ./tmp/*/wda-background.log
+
+# 清理并重新启动
+pkill -f "xcodebuild.*WebDriverAgent"
+pkill -f "iproxy.*8100"
+bash skills/ios-use/scripts/ios_wda_init.sh
+```
+
+### 2. 连接失败
+
+```bash
+# 检查设备 IP
+curl -s http://<DEVICE_IP>:8100/status
+
+# 检查 iproxy
+lsof -i :8100
+
+# 重新初始化
+bash skills/ios-use/scripts/ios_wda_init.sh
+```
+
+### 3. Session 创建失败
+
+```bash
+# 检查 WDA 状态
+curl -s http://<DEVICE_IP>:8100/status | jq '.value.ready'
+
+# 强制创建新 session
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences --force-new
+```
+
+## 清理命令
+
+```bash
+# 停止所有进程
+bash skills/ios-use/scripts/cleanup_ios_wda.sh
+
+# 或手动清理
+pkill -f "xcodebuild.*WebDriverAgent"
+pkill -f "iproxy.*8100"
+```
+
+## 高级用法
+
+### 使用环境变量
+
+```bash
+export IOS_WDA_DEFAULT_HOST="192.168.1.107"
+export IOS_WDA_DEFAULT_PORT="8100"
+bash skills/ios-use/scripts/ios_wda_init.sh
+```
+
+### 组合使用
+
+```bash
+# 完整流程
+bash skills/ios-use/scripts/ios_wda_init.sh && \
+bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences && \
+bash skills/ios-use/scripts/ios_wda_snapshot.sh
+```
+
+### 直接使用 WDA API
+
+```bash
+# 获取 session 列表
+curl -s http://<DEVICE_IP>:8100/session
+
+# 获取设备信息
+curl -s http://<DEVICE_IP>:8100/status
+
+# 获取屏幕方向
+curl -s http://<DEVICE_IP>:8100/session/<SESSION_ID>/orientation
+
+# 锁定屏幕
+curl -X POST http://<DEVICE_IP>:8100/session/<SESSION_ID>/wda/lock
+```
 
 ## 完成标准
-- WDA 的 `GET /status` 或 `GET /wda/healthcheck` 可用。
-- 需要 session 的操作之前，已确认 session 创建成功或会话仍然有效。
-- 每次交互后至少通过元素状态、页面源码、截图或应用状态之一验证结果。
-- 任何会改变系统副作用的保存动作，至少完成一次“保存后表单复读”或一次“下游行为验证”；只看到 `Save` 点击成功不算完成。
-- 出现失败时，已记录错误类型，并执行对应的最短恢复路径，而不是盲目重试。
-- 本次运行的缓存文件已经更新到 `./tmp/ios-use-cache.json`，后续可以先尝试复用。
+
+- WDA 的 `GET /status` 或 `GET /wda/healthcheck` 可用
+- Session 创建成功或会话仍然有效
+- 每次交互后至少通过元素状态、页面源码、截图或应用状态之一验证结果
+- 缓存文件已更新到 `./tmp/ios-use-cache.json`
 
 ## 参考资料
+
 - [启动与 Session](./references/startup-and-session.md)
 - [命令参考](./references/command-reference.md)
 - [输入与键盘](./references/input-and-keyboard.md)
@@ -89,4 +267,3 @@ dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径
 - [视觉驱动与性能](./references/visual-and-performance.md)
 - [故障排查](./references/troubleshooting.md)
 - [限制与取舍](./references/limitations.md)
-
