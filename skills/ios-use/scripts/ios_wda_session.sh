@@ -66,6 +66,18 @@ fi
 echo "   设备: ${device_name} (${device_udid})" >&2
 echo "   IP: ${host}:${port}" >&2
 
+# 1.5 校验 Bundle ID 是否已安装
+if [[ -n "${bundle_id}" ]]; then
+  echo "   校验 Bundle ID: ${bundle_id}" >&2
+  if ! ios_wda_validate_bundle_id "${device_udid}" "${bundle_id}"; then
+    echo "   ⚠ Bundle ID '${bundle_id}' 未在设备上找到" >&2
+    echo "   可用 Bundle ID（部分）:" >&2
+    ios_wda_list_bundle_ids "${device_udid}" | head -20 >&2
+    exit 4
+  fi
+  echo "   ✓ Bundle ID 有效" >&2
+fi
+
 # 2. 获取或创建 session
 echo "2. 获取或创建 session..." >&2
 

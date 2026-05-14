@@ -16,7 +16,7 @@
 | `connection reset by peer` | 端口被旧转发占用/iproxy 指向错误设备 | `lsof` + `ps` 确认 8100 监听者与目标设备 |
 | `iproxy` 打印 `New connection` | 正常流量日志 | 先看 `/status` 是否 200 |
 | 设备不存在（其他工具可列） | 工具枚举口径不同 | 回到 `xcrun xctrace list devices` 取 Xcode 可见设备 |
-| `Session Not Created` | 能力集错误/App 路径无效 | 精简 capabilities，确认 bundleId/app/udid |
+| `Session Not Created` | 能力集错误/App 路径无效/Bundle ID 未安装 | 精简 capabilities，`xcrun devicectl device info apps --device <UDID>` 确认 bundleId |
 | `No Such Driver` / 404 | Session 失效 | 重建 session，不复用旧 ID |
 | `Element Not Visible` | 元素在屏外/被遮挡/动画未结束 | 先滚动或等待稳定 |
 | `Stale Element Reference` | 页面树变化 | 重新获取 source 并重新查找 |
@@ -65,6 +65,7 @@
 
 ```bash
 xcrun xctrace list devices                        # 设备在线
+xcrun devicectl device info apps --device <UDID>  # 设备已安装 App
 lsof -i :8100                                      # 端口监听
 ps aux | grep iproxy                               # iproxy 进程
 curl -s http://127.0.0.1:8100/status               # WDA 状态（本地）

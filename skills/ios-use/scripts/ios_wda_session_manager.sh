@@ -123,7 +123,7 @@ create_session() {
   device_name="$(ios_wda_cache_get '.device.name' || echo 'iPhone')"
   device_udid="$(ios_wda_cache_get '.device.udid' || echo '')"
   
-  # 构建 capabilities
+  # 构建 capabilities（含超时/复用参数，防止 session 被系统冻结）
   local capabilities_json
   capabilities_json="$(jq -nc \
     --arg platformName "iOS" \
@@ -133,7 +133,15 @@ create_session() {
     '{
       capabilities: {
         alwaysMatch: (
-          {platformName: $platformName, deviceName: $deviceName, udid: $udid}
+          {
+            platformName: $platformName,
+            deviceName: $deviceName,
+            udid: $udid,
+            useNewWDA: false,
+            wdaLaunchTimeout: 180000,
+            wdaConnectionTimeout: 240000,
+            shouldTerminateApp: false
+          }
           + (if $bundleId == "" then {} else {bundleId: $bundleId} end)
         )
       }

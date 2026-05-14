@@ -331,6 +331,55 @@ ios_wda_emit_json() {
   printf '%s\n' "${payload}" | jq '.'
 }
 
+# 校验 Bundle ID 是否已安装在设备上
+# 用法：ios_wda_validate_bundle_id <udid> <bundle_id>
+# 返回：0=有效  1=未找到  2=devicectl 不可用
+ios_wda_validate_bundle_id() {
+  local udid="$1"
+  local bundle_id="$2"
+  local apps_json
+
+  if ! command -v xcrun >/dev/null 2>&1; then
+    return 2
+  fi
+
+  apps_json="$(xcrun devicectl device info apps --device "${udid}" 2>/dev/null)" || return 2
+
+  if printf '%s\n' "${apps_json}" | grep -qF "${bundle_id}"; then
+    return 0
+  fi
+  return 1
+}
+
+# 列出设备上所有已安装的 Bundle ID
+# 用法：ios_wda_list_bundle_ids <udid>
+ios_wda_list_bundle_ids() {
+  local udid="$1"
+  xcrun devicectl device info apps --device "${udid}" 2>/dev/null \
+    | grep -Eo '[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+' \
+    | sort -u || true
+}
+
+# WDA session keep-alive：定期 ping /status 防止 session 被系统冻结
+# 用法：ios_wda_keep_alive <host> <port> <interval_seconds> &
+# 后台运行，用 kill %N 或 pkill -f 停止
+ios_wda_keep_alive() {
+  local host="${1:-${IOS_WDA_DEFAULT_HOST}}"
+  local port="${2:-${IOS_WDA_DEFAULT_PORT}}"
+  local interval="${3:-60}"
+  local device_ip
+
+  device_ip="$(ios_wda_cache_get '.connection.deviceIp')"
+
+  while true; do
+    curl --max-time 3 -sf "http://${host}:${port}/status" >/dev/null 2>&1 || true
+    if [[ -n "${device_ip}" && "${device_ip}" != "${host}" ]]; then
+      curl --max-time 3 -sf "http://${device_ip}:${port}/status" >/dev/null 2>&1 || true
+    fi
+    sleep "${interval}"
+  done
+}
+
 ios_wda_wait_for_ready() {
   local host="$1"
   local port="$2"

@@ -49,11 +49,43 @@ bash skills/ios-use/scripts/ios_wda_init.sh --host 192.168.1.107
 - 真机：`ios-deploy` + `iproxy` 可用、签名有效、Bundle ID 唯一、开发团队 ID 正确
 - 用 `xcrun xctrace list devices` 确认 Xcode 可见的在线设备
 
+### Bundle ID 校验
+
+脚本会自动校验 Bundle ID 是否已安装。手动检查：
+```bash
+# 列出设备所有 App（含系统 App）
+xcrun devicectl device info apps --device <UDID>
+
+# 搜索特定 App
+xcrun devicectl device info apps --device <UDID> | grep -i "preferences"
+```
+常见错误：Bundle ID 拼写错误、App 未安装、设备 UDID 不匹配。
+
 ## 模拟器差异
 
 - 枚举用 `xcrun simctl list devices`
 - 不需要签名和 `iproxy`
 - 冷启动/重置用 `simctl` 管理器状态
+
+## Session 超时参数
+
+创建 session 时自动注入以下 capabilities：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `useNewWDA` | `false` | 复用已有 WDA 实例，避免重装/重启 |
+| `wdaLaunchTimeout` | `180000` ms | WDA 启动超时，真机建议 >= 120s |
+| `wdaConnectionTimeout` | `240000` ms | 建立连接超时 |
+| `shouldTerminateApp` | `false` | 不自动杀 App，防止 session 失效 |
+
+### Keep-alive
+
+WDA 空闲过久会被系统冻结。后台保活：
+```bash
+source skills/ios-use/scripts/_ios_wda_common.sh
+ios_wda_keep_alive 127.0.0.1 8100 60 &  # 每 60s ping 一次
+# 停止：kill $!
+```
 
 ## 健康检查
 
