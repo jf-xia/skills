@@ -191,8 +191,11 @@ if [[ "${wda_ready}" != "true" ]]; then
   fi
 fi
 
-# 5. 更新缓存
-echo "5. 更新缓存..." >&2
+# 5. 启动 keep-alive
+ios_wda_keepalive_start "${host}" "${port}" 60
+
+# 6. 更新缓存
+echo "6. 更新缓存..." >&2
 cache_payload="$(jq -n \
   --arg checkedAt "$(ios_wda_now_iso)" \
   --arg host "${host}" \
@@ -235,7 +238,7 @@ cache_payload="$(jq -n \
 ios_wda_cache_merge_json "${cache_payload}"
 
 # 6. 输出结果
-echo "6. 初始化完成" >&2
+echo "7. 初始化完成" >&2
 result_payload="$(jq -n \
   --arg checkedAt "$(ios_wda_now_iso)" \
   --arg cacheFile "${IOS_WDA_CACHE_FILE}" \

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 IOS_WDA_COMMON_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-IOS_WDA_REPO_ROOT="$(CDPATH= cd -- "${IOS_WDA_COMMON_DIR}/../../../.." && pwd)"
+IOS_WDA_REPO_ROOT="$(CDPATH= cd -- "${IOS_WDA_COMMON_DIR}/../../.." && pwd)"
 IOS_WDA_TMP_DIR="${IOS_WDA_REPO_ROOT}/tmp"
 IOS_WDA_CACHE_FILE="${IOS_WDA_TMP_DIR}/ios-use-cache.json"
 IOS_WDA_DEFAULT_HOST="${IOS_WDA_DEFAULT_HOST:-127.0.0.1}"
@@ -69,13 +69,15 @@ ios_wda_cache_merge_json() {
       return 1
     fi
   done
-  trap 'rmdir "${lock_dir}" 2>/dev/null' RETURN
-  
-  tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
-  jq -s '.[0] * .[1]' "${IOS_WDA_CACHE_FILE}" <(printf '%s\n' "${payload}") >"${tmp_file}"
-  mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
-  
-  rmdir "${lock_dir}" 2>/dev/null
+  # 使用 subshell 执行清理，避免 trap 引用局部变量
+  (
+    tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
+    jq -s '.[0] * .[1]' "${IOS_WDA_CACHE_FILE}" <(printf '%s\n' "${payload}") >"${tmp_file}"
+    mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
+  )
+  local rc=$?
+  rmdir "${lock_dir}" 2>/dev/null || true
+  return $rc
 }
 
 ios_wda_cache_clear_session() {
@@ -95,13 +97,14 @@ ios_wda_cache_clear_session() {
       return 1
     fi
   done
-  trap 'rmdir "${lock_dir}" 2>/dev/null' RETURN
-  
-  tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
-  jq '.session = {}' "${IOS_WDA_CACHE_FILE}" >"${tmp_file}"
-  mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
-  
-  rmdir "${lock_dir}" 2>/dev/null
+  (
+    tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
+    jq '.session = {}' "${IOS_WDA_CACHE_FILE}" >"${tmp_file}"
+    mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
+  )
+  local rc=$?
+  rmdir "${lock_dir}" 2>/dev/null || true
+  return $rc
 }
 
 ios_wda_local_listener_pid() {
@@ -333,11 +336,17 @@ ios_wda_emit_json() {
 
 # 校验 Bundle ID 是否已安装在设备上
 # 用法：ios_wda_validate_bundle_id <udid> <bundle_id>
-# 返回：0=有效  1=未找到  2=devicectl 不可用
+# 返回：0=已确认安装  1=未在 devicectl 列表中找到（可能是系统 App）  2=devicectl 不可用
+# 注意：xcrun devicectl device info apps 只列开发侧载的 App，系统 App (com.apple.*) 不在列表中
 ios_wda_validate_bundle_id() {
   local udid="$1"
   local bundle_id="$2"
   local apps_json
+
+  # 系统 App 跳过校验
+  if [[ "${bundle_id}" == com.apple.* ]]; then
+    return 0
+  fi
 
   if ! command -v xcrun >/dev/null 2>&1; then
     return 2
@@ -360,9 +369,10 @@ ios_wda_list_bundle_ids() {
     | sort -u || true
 }
 
-# WDA session keep-alive：定期 ping /status 防止 session 被系统冻结
-# 用法：ios_wda_keep_alive <host> <port> <interval_seconds> &
-# 后台运行，用 kill %N 或 pkill -f 停止
+# WDA session keep-alive：定时 ping /status 防止 session 被系统冻结
+# 作为 tmux 后台进程运行，由 init/cleanup 统一管理
+# 用法：ios_wda_keep_alive <host> <port> <interval_seconds>
+# 前台运行（tmux 内部用）
 ios_wda_keep_alive() {
   local host="${1:-${IOS_WDA_DEFAULT_HOST}}"
   local port="${2:-${IOS_WDA_DEFAULT_PORT}}"
@@ -378,6 +388,52 @@ ios_wda_keep_alive() {
     fi
     sleep "${interval}"
   done
+}
+
+# keep-alive tmux 会话名
+ios_wda_keepalive_session_name() {
+  local port="${1:-${IOS_WDA_DEFAULT_PORT}}"
+  echo "wda-keepalive-${port}"
+}
+
+# 启动 keep-alive（幂等：已存在则跳过）
+# 用法：ios_wda_keepalive_start <host> <port> <interval>
+ios_wda_keepalive_start() {
+  local host="${1:-${IOS_WDA_DEFAULT_HOST}}"
+  local port="${2:-${IOS_WDA_DEFAULT_PORT}}"
+  local interval="${3:-60}"
+  local session_name
+  session_name="$(ios_wda_keepalive_session_name "${port}")"
+
+  # 幂等检查
+  if tmux has-session -t "${session_name}" 2>/dev/null; then
+    echo "keep-alive 已运行: ${session_name}" >&2
+    return 0
+  fi
+
+  tmux new-session -d -s "${session_name}" \
+    "source '${IOS_WDA_COMMON_DIR}/_ios_wda_common.sh' 2>/dev/null; ios_wda_keep_alive '${host}' '${port}' '${interval}'"
+  echo "keep-alive 已启动: ${session_name} (每 ${interval}s)" >&2
+}
+
+# 停止 keep-alive
+ios_wda_keepalive_stop() {
+  local port="${1:-${IOS_WDA_DEFAULT_PORT}}"
+  local session_name
+  session_name="$(ios_wda_keepalive_session_name "${port}")"
+
+  if tmux has-session -t "${session_name}" 2>/dev/null; then
+    tmux kill-session -t "${session_name}" 2>/dev/null || true
+    echo "keep-alive 已停止: ${session_name}" >&2
+  fi
+}
+
+# 检查 keep-alive 是否在运行
+ios_wda_keepalive_is_running() {
+  local port="${1:-${IOS_WDA_DEFAULT_PORT}}"
+  local session_name
+  session_name="$(ios_wda_keepalive_session_name "${port}")"
+  tmux has-session -t "${session_name}" 2>/dev/null
 }
 
 ios_wda_wait_for_ready() {

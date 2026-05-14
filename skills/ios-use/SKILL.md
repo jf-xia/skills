@@ -12,7 +12,7 @@ user-invocable: true
 # 一条命令：创建 session + 启动应用（自动处理设备检查、iproxy、WDA）
 bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences
 # 获取页面源码
-curl -s http://<HOST>:8100/session/<SESSION_ID>/source | jq '.value'
+curl -s http://<HOST>:8100/wda/accessibleSource | jq '.value'
 # 获取截图
 curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > screenshot.png
 ```
@@ -132,6 +132,30 @@ bash ios_wda_click.sh --element-id <ID> --strategy offset --x-offset 30 --y-offs
 ## 性能优化
 
 当脚本多次出错或多次无法完成任务的时候进行优化建议, 如果改动小，直接优化，如果复杂，需要用户确认后再优化。
+
+## Session 超时与 Keep-alive
+
+WDA 有内置超时机制，长时间空闲会自动关闭 Session。脚本创建 session 时已注入以下参数：
+
+| 参数 | 值 | 作用 |
+|------|-----|------|
+| `useNewWDA` | `false` | 复用已有 WDA，避免重装/重启 |
+| `wdaLaunchTimeout` | `180000` ms | WDA 启动超时 3 分钟 |
+| `wdaConnectionTimeout` | `240000` ms | 连接建立超时 4 分钟 |
+| `shouldTerminateApp` | `false` | 不自动杀应用，防止 session 失效 |
+
+keep-alive 由 `ios_wda_init.sh` 自动启动（tmux 会话），`cleanup_ios_wda.sh` 自动停止，幂等不重复创建。
+
+```bash
+# init 时自动启动，无需手动操作
+bash skills/ios-use/scripts/ios_wda_init.sh
+
+# 手动管理（通常不需要）
+source skills/ios-use/scripts/_ios_wda_common.sh
+ios_wda_keepalive_start 127.0.0.1 8100 60   # 启动
+ios_wda_keepalive_is_running 8100           # 检查
+ios_wda_keepalive_stop 8100                 # 停止
+```
 
 ## 详细文档
 

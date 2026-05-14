@@ -8,6 +8,9 @@ source "${SCRIPT_DIR}/_ios_wda_common.sh"
 
 ios_wda_require_tools jq
 
+# 停止 keep-alive
+ios_wda_keepalive_stop "${IOS_WDA_DEFAULT_PORT}"
+
 wda_stopped="false"
 iproxy_stopped="false"
 wda_running="false"

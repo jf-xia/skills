@@ -14,7 +14,7 @@ bash skills/ios-use/scripts/ios_wda_snapshot.sh                 # 页面信息
 
 ## ios_wda_init.sh
 
-检查设备 → 启动/复用 iproxy → 启动/复用 WDA → 更新缓存。
+检查设备 → 启动/复用 iproxy → 启动/复用 WDA → 启动 keep-alive → 更新缓存。
 
 **参数：** `--udid` `--host`(默认127.0.0.1) `--port`(默认8100) `--project-path` `--scheme` `--max-wait`(默认60s)
 
@@ -80,12 +80,20 @@ xcrun devicectl device info apps --device <UDID> | grep -i "preferences"
 
 ### Keep-alive
 
-WDA 空闲过久会被系统冻结。后台保活：
+WDA 空闲过久会被系统冻结。`ios_wda_init.sh` 自动启动 tmux 会话管理 keep-alive，幂等不重复。
+
 ```bash
+# init 时自动启动，无需手动操作
+bash skills/ios-use/scripts/ios_wda_init.sh
+
+# 手动管理（通常不需要）
 source skills/ios-use/scripts/_ios_wda_common.sh
-ios_wda_keep_alive 127.0.0.1 8100 60 &  # 每 60s ping 一次
-# 停止：kill $!
+ios_wda_keepalive_start 127.0.0.1 8100 60   # 启动
+ios_wda_keepalive_is_running 8100           # 检查状态
+ios_wda_keepalive_stop 8100                 # 停止
 ```
+
+tmux 会话名：`wda-keepalive-<PORT>`，`cleanup_ios_wda.sh` 清理时自动停止。
 
 ## 健康检查
 
