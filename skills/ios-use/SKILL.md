@@ -45,7 +45,7 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 ### 元素交互流程
 1. **Observe**：`ios_wda_snapshot.sh` 获取 source + screenshot
 2. **Think**：从 source 定位元素（优先 accessibility id / predicate / class chain，避免 XPath）
-3. **Act**：`POST /element/:uuid/click` 或 `/value` 或 `/clear`
+3. **Act**：`ios_wda_click.sh --element-id <ID>` 或 `ios_wda_type.sh`；点击失败时换策略（center → w3c）
 4. **Verify**：再次 `ios_wda_snapshot.sh` 截屏确认操作生效
 
 ### 输入文本流程
@@ -69,6 +69,30 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 | 元素 + 偏移量 | 偏移基准是**元素左上角**，不是中心 |
 | W3C Actions | 通常以元素中心为基准，与 WDA 简单手势不同 |
 
+## 点击策略
+
+`element.click()` 依赖 WDA 计算中点，有时点错位置。使用 `ios_wda_click.sh` 选择策略：
+
+| 策略 | 原理 | 适用场景 |
+|------|------|----------|
+| `element` | `/element/:uuid/click`，WDA 内部选中点 | 默认，元素小且居中时 |
+| `center` | 获取 rect → 计算 `(x+w/2, y+h/2)` → `/wda/tap` 绝对坐标 | 元素大或中点偏移时 |
+| `w3c` | W3C Actions pointerDown/pointerUp，最底层模拟 | element/center 都失败时 |
+| `offset` | 获取 rect → `/wda/tap/:uuid` + 左上角偏移 | 需要精确偏移点击时 |
+
+```bash
+# 默认点击
+bash ios_wda_click.sh --element-id <ID>
+# 中心坐标点击（推荐当 element 点错时）
+bash ios_wda_click.sh --element-id <ID> --strategy center
+# W3C 模拟点击
+bash ios_wda_click.sh --element-id <ID> --strategy w3c
+# 偏移点击（基准是元素左上角）
+bash ios_wda_click.sh --element-id <ID> --strategy offset --x-offset 30 --y-offset 10
+```
+
+> 偏移策略不传 x/y 时自动使用 `(width/2, height/2)` 等效中心点。
+
 ## 脚本参数速查
 
 | 脚本 | 关键参数 |
@@ -76,6 +100,7 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 | `ios_wda_init.sh` | `--udid` `--host` `--port` `--project-path` `--scheme` `--max-wait` |
 | `ios_wda_session.sh` | `--bundle-id` `--udid` `--host` `--port` `--force-new` `--delete` `--session-id` |
 | `ios_wda_snapshot.sh` | `--session-id` `--output-dir` `--only-source` `--only-accessible` `--only-screenshot` |
+| `ios_wda_click.sh` | `--element-id` `--strategy element|center|w3c|offset` `--x-offset` `--y-offset` `--verify` |
 | `ios_wda_type.sh` | `--element-id` `--using` `--locator` `--text` `--text-file` `--frequency` `--clear` `--no-click` `--no-verify` |
 
 ## WDA API 核心速查
@@ -104,8 +129,10 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 | 输入与键盘 | [input-and-keyboard.md](references/input-and-keyboard.md) |
 | 应用与设备控制 | [app-and-device-control.md](references/app-and-device-control.md) |
 | 视觉与性能 | [visual-and-performance.md](references/visual-and-performance.md) |
+| 点击策略 | [click-strategies.md](references/click-strategies.md) |
 | 故障排查 | [troubleshooting.md](references/troubleshooting.md) |
 | 限制与取舍 | [limitations.md](references/limitations.md) |
+| 多次操作失败请使用代码库研究 | [codebase-research.md](references/codebase-research.md) |
 
 ## 清理
 ```bash

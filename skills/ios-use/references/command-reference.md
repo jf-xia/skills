@@ -10,6 +10,7 @@
 
 - **屏幕绝对坐标**：原点 `(0,0)` 左上角，x 右增，y 下增。用于 `/wda/tap`、`/wda/swipe`、`/wda/dragfromtoforduration`
 - **元素相对坐标**：偏移基准是元素边界左上角（非中心）。视觉模型输出中心点时需先换算
+- **W3C Actions**：`origin: viewport` 时为绝对坐标；`origin: element` 时偏移基准是元素**中心** `(0.5, 0.5)`，与 `/wda/tap` 的左上角基准不同
 - **常见误区**：不要把截图绝对坐标当元素偏移；不要把 W3C 中心点语义套到 `/wda/tap`
 
 ## Session 与健康检查
@@ -59,7 +60,8 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pickerwheel/$ELEMENT_
 
 | 方法 | 路径 | 关键参数 | 说明 |
 |------|------|----------|------|
-| `POST` | `/wda/tap` | `x`, `y` | 点击坐标或元素 |
+| `POST` | `/wda/tap` | `x`, `y` | 点击坐标（无元素时为屏幕绝对坐标） |
+| `POST` | `/wda/tap/:uuid` | `x`, `y` | 点击元素，x/y 是相对元素**左上角**的偏移 |
 | `POST` | `/wda/doubleTap` | `x`, `y` | 双击 |
 | `POST` | `/wda/twoFingerTap` | 元素或坐标 | 双指点击 |
 | `POST` | `/wda/tapWithNumberOfTaps` | `numberOfTaps`, `numberOfTouches` | 自定义点击次数 |
@@ -79,6 +81,49 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/wda/swipe \
 # 滚动到目标
 curl -X POST http://localhost:8100/session/$SESSION_ID/wda/scroll \
   -H "Content-Type: application/json" -d '{"predicateString": "label BEGINSWITH \"Item\""}'
+
+# 元素偏移点击（偏移基准是元素左上角）
+curl -X POST http://localhost:8100/session/$SESSION_ID/wda/tap/$ELEMENT_ID \
+  -H "Content-Type: application/json" -d '{"x": 50, "y": 20}'
+```
+
+## W3C Actions
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `POST` | `/session/:sid/actions` | 执行 W3C 动作链 |
+| `DELETE` | `/session/:sid/actions` | 释放所有动作源 |
+
+```bash
+# W3C 点击（viewport 绝对坐标）
+curl -X POST http://localhost:8100/session/$SESSION_ID/actions \
+  -H "Content-Type: application/json" -d '{
+  "actions": [{
+    "type": "pointer", "id": "f1",
+    "parameters": {"pointerType": "touch"},
+    "actions": [
+      {"type": "pointerMove", "duration": 0, "origin": "viewport", "x": 200, "y": 300},
+      {"type": "pointerDown", "button": 0},
+      {"type": "pause", "duration": 100},
+      {"type": "pointerUp", "button": 0}
+    ]
+  }]
+}'
+
+# W3C 点击元素（元素中心 + 偏移）
+curl -X POST http://localhost:8100/session/$SESSION_ID/actions \
+  -H "Content-Type: application/json" -d '{
+  "actions": [{
+    "type": "pointer", "id": "f1",
+    "parameters": {"pointerType": "touch"},
+    "actions": [
+      {"type": "pointerMove", "duration": 0, "origin": "$ELEMENT_ID", "x": 0, "y": 0},
+      {"type": "pointerDown", "button": 0},
+      {"type": "pause", "duration": 100},
+      {"type": "pointerUp", "button": 0}
+    ]
+  }]
+}'
 ```
 
 ## 页面与调试

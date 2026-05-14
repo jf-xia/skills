@@ -20,6 +20,7 @@
 | `No Such Driver` / 404 | Session 失效 | 重建 session，不复用旧 ID |
 | `Element Not Visible` | 元素在屏外/被遮挡/动画未结束 | 先滚动或等待稳定 |
 | `Stale Element Reference` | 页面树变化 | 重新获取 source 并重新查找 |
+| 点击点错位置 | `/element/:uuid/click` 的中点计算不准 | 换 `ios_wda_click.sh --strategy center` 或 `w3c` |
 | `Timeout` / 408 | 页面过慢/等待条件不合理 | 拉长超时、拆分动作、减少全树扫描 |
 | 输入无效 | 未聚焦/键盘未起/控件特殊 | 先点击聚焦，再用正确接口 |
 | PickerWheel 值越调越偏 | 当成普通输入框处理 | 改用专用路由，一次只改一个 wheel |
@@ -45,9 +46,10 @@
 ## 自愈顺序
 
 1. 原位重试一次（仅偶发点击/输入失败）
-2. 重拉 `/source` 或截图，确认页面是否变化
-3. 重建元素定位，不复用旧 UUID
-4. 重建 session
+2. 点击点错 → 换策略：`element` → `center` → `w3c`（通过 `ios_wda_click.sh --strategy`）
+3. 重拉 `/source` 或截图，确认页面是否变化
+4. 重建元素定位，不复用旧 UUID
+5. 重建 session
 5. 重启 WDA（真机同时检查签名、端口转发、设备信任）
 6. 缓存失效 → 清理 `./tmp/ios-use-cache.json`，重新走脚本预检
 
@@ -69,17 +71,6 @@ curl -s http://127.0.0.1:8100/status               # WDA 状态（本地）
 curl -s http://<DEVICE_IP>:8100/status             # WDA 状态（设备 IP）
 cat ./tmp/ios-use-cache.json | jq '.'              # 缓存内容
 cat ./tmp/*/wda-background.log                     # WDA 日志
-```
-
-## 代码库追问
-
-深度问题可用 `dw` CLI 问 WebDriverAgent 代码库：
-
-```bash
-dw aq -r "appium/WebDriverAgent" -q "POST /session 经过哪些 handler"
-dw aq -r "appium/WebDriverAgent" -q "element/:uuid/value 的 frequency 参数如何生效"
-dw aq -r "appium/WebDriverAgent" -q "No Such Driver 从哪里抛出"
-dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径差异"
 ```
 
 ## 诊断信息保留
