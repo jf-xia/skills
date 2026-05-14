@@ -3,7 +3,7 @@
 set -euo pipefail
 
 IOS_WDA_COMMON_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-IOS_WDA_REPO_ROOT="$(CDPATH= cd -- "${IOS_WDA_COMMON_DIR}/../../.." && pwd)"
+IOS_WDA_REPO_ROOT="$(CDPATH= cd -- "${IOS_WDA_COMMON_DIR}/../../../.." && pwd)"
 IOS_WDA_TMP_DIR="${IOS_WDA_REPO_ROOT}/tmp"
 IOS_WDA_CACHE_FILE="${IOS_WDA_TMP_DIR}/ios-use-cache.json"
 IOS_WDA_DEFAULT_HOST="${IOS_WDA_DEFAULT_HOST:-127.0.0.1}"

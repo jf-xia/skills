@@ -17,32 +17,49 @@ curl -s http://<HOST>:8100/session/<SESSION_ID>/source | jq '.value'
 curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > screenshot.png
 ```
 
-## 工作流
+
+
+## 工作流（ReAct 循环）
+
+**核心原则：每次操作前必须截屏观察当前状态，禁止预测式连续操作。**
+
+每个操作步骤都遵循：
+```
+截屏 → 观察屏幕内容 → 决策下一步 → 执行操作 → 再次截屏验证
+```
+
+### ReAct 模板
+1. **Observe**：`ios_wda_snapshot.sh` 截屏 + 获取 source
+2. **Think**：分析当前屏幕状态，确认目标元素位置和状态
+3. **Act**：执行单个操作（点击/输入/滑动等）
+4. **Verify**：再次截屏，确认操作生效
+5. **Repeat**：回到步骤 1，直到任务完成
+
+> ⚠️ 禁止跳过截屏直接执行多个操作。每步操作后必须截图确认结果。
 
 ### 标准启动流程
 1. `ios_wda_init.sh` — 检查设备、启动 iproxy、启动 WDA、等待 ready
 2. `ios_wda_session.sh --bundle-id <BUNDLE_ID>` — 创建 session、激活应用
-3. `ios_wda_snapshot.sh` — 获取 source、accessibleSource、screenshot
+3. `ios_wda_snapshot.sh` — **截屏确认启动成功**
 
 ### 元素交互流程
-1. 获取页面树：`GET /source` 或 `GET /wda/accessibleSource`
-2. 定位元素：优先 accessibility id / predicate / class chain，避免 XPath
-3. 执行操作：`POST /element/:uuid/click`、`/value`、`/clear`
-4. 验证结果：重新读取 source 或截图确认
+1. **Observe**：`ios_wda_snapshot.sh` 获取 source + screenshot
+2. **Think**：从 source 定位元素（优先 accessibility id / predicate / class chain，避免 XPath）
+3. **Act**：`POST /element/:uuid/click` 或 `/value` 或 `/clear`
+4. **Verify**：再次 `ios_wda_snapshot.sh` 截屏确认操作生效
 
 ### 输入文本流程
-1. `ios_wda_type.sh --element-id <ID> --text "内容"` — 点击聚焦 + 输入 + 验证
-2. 或手动：`POST /element/:uuid/click` → `POST /element/:uuid/value`
-3. 长文本用 `--text-file` 避免 shell 转义问题
+1. **Observe**：截屏确认输入框状态
+2. **Act**：`ios_wda_type.sh --element-id <ID> --text "内容"`
+3. **Verify**：截屏确认输入内容正确
+4. 长文本用 `--text-file` 避免 shell 转义问题
 
 ### 关闭应用流程
-1. `POST /wda/homescreen`（**全局端点**，不加 session 前缀）回到主屏
-2. 或用 `POST /wda/apps/terminate` 终止指定应用
+1. **Observe**：截屏确认当前应用状态
+2. **Act**：`POST /wda/homescreen`（**全局端点**）或 `POST /wda/apps/terminate`
+3. **Verify**：截屏确认回到主屏
 
 > ⚠️ `/wda/homescreen` 是全局端点，错误写法 `/session/<ID>/wda/homescreen` 会报 `unknown command`。
-
-### 视觉闭环（结构化信息不足时）
-**Observe**：截图或拉取页面树 → **Plan**：确定目标 → **Act**：执行操作 → **Check**：确认生效
 
 ## 坐标系要点
 
