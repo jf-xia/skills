@@ -7,19 +7,12 @@ user-invocable: true
 
 # iOS 使用能力
 
-## 缓存文件
-
-缓存文件为 `ios-use-cache.json`，包含：udid、iproxy、sessionId
-
 ## 快速开始
-
 ```bash
 # 一条命令：创建 session + 启动应用（自动处理设备检查、iproxy、WDA）
 bash skills/ios-use/scripts/ios_wda_session.sh --bundle-id com.apple.Preferences
-
 # 获取页面源码
 curl -s http://<HOST>:8100/session/<SESSION_ID>/source | jq '.value'
-
 # 获取截图
 curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > screenshot.png
 ```
@@ -42,11 +35,14 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 2. 或手动：`POST /element/:uuid/click` → `POST /element/:uuid/value`
 3. 长文本用 `--text-file` 避免 shell 转义问题
 
+### 关闭应用流程
+1. `POST /wda/homescreen`（**全局端点**，不加 session 前缀）回到主屏
+2. 或用 `POST /wda/apps/terminate` 终止指定应用
+
+> ⚠️ `/wda/homescreen` 是全局端点，错误写法 `/session/<ID>/wda/homescreen` 会报 `unknown command`。
+
 ### 视觉闭环（结构化信息不足时）
-1. **Observe**：截图或拉取页面树
-2. **Plan**：根据文本/视觉确定目标位置
-3. **Act**：调用点击、输入、滚动等接口
-4. **Check**：再次截图或读取 source 确认生效
+**Observe**：截图或拉取页面树 → **Plan**：确定目标 → **Act**：执行操作 → **Check**：确认生效
 
 ## 坐标系要点
 
@@ -58,17 +54,12 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 
 ## 脚本参数速查
 
-### ios_wda_init.sh
-`--udid` `--host` `--port` `--project-path` `--scheme` `--max-wait`
-
-### ios_wda_session.sh
-`--bundle-id` `--udid` `--host` `--port` `--force-new` `--delete` `--session-id`
-
-### ios_wda_snapshot.sh
-`--session-id` `--output-dir` `--only-source` `--only-accessible` `--only-screenshot`
-
-### ios_wda_type.sh
-`--element-id` `--using` `--locator` `--text` `--text-file` `--frequency` `--clear` `--no-click` `--no-verify`
+| 脚本 | 关键参数 |
+|------|----------|
+| `ios_wda_init.sh` | `--udid` `--host` `--port` `--project-path` `--scheme` `--max-wait` |
+| `ios_wda_session.sh` | `--bundle-id` `--udid` `--host` `--port` `--force-new` `--delete` `--session-id` |
+| `ios_wda_snapshot.sh` | `--session-id` `--output-dir` `--only-source` `--only-accessible` `--only-screenshot` |
+| `ios_wda_type.sh` | `--element-id` `--using` `--locator` `--text` `--text-file` `--frequency` `--clear` `--no-click` `--no-verify` |
 
 ## WDA API 核心速查
 
@@ -79,9 +70,13 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 | 页面 | `GET /source`、`GET /wda/accessibleSource`、`GET /screenshot` |
 | 元素 | `GET/POST /element/:uuid/{click,value,clear,text,rect,enabled,displayed}` |
 | 手势 | `POST /wda/{tap,doubleTap,touchAndHold,swipe,pinch,rotate,dragfromtoforduration,scroll}` |
-| 应用 | `POST /wda/apps/{launch,activate,terminate,state}`、`/wda/homescreen` |
+| 应用 | `POST /wda/apps/{launch,activate,terminate,state}`、`POST /wda/homescreen`（全局端点） |
 | 弹窗 | `GET /alert/text`、`POST /alert/{accept,dismiss}`、`GET /wda/alert/buttons` |
 | 设备 | `POST /wda/lock`、`/orientation`、`GET /wda/screen`、`/wda/device/info` |
+
+## 性能优化
+
+当脚本多次出错或多次无法完成任务的时候进行优化建议, 如果改动小，直接优化，如果复杂，需要用户确认后再优化。
 
 ## 详细文档
 
@@ -96,7 +91,6 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 | 限制与取舍 | [limitations.md](references/limitations.md) |
 
 ## 清理
-
 ```bash
 bash skills/ios-use/scripts/cleanup_ios_wda.sh
 ```

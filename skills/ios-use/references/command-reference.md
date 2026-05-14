@@ -101,7 +101,7 @@ curl "http://localhost:8100/session/$SESSION_ID/source?format=json"
 | 应用 | `POST` | `/wda/apps/activate` | 切到前台 |
 | 应用 | `POST` | `/wda/apps/terminate` | 终止应用 |
 | 应用 | `POST` | `/wda/apps/state` | 查询状态（1=未运行,4=前台） |
-| 应用 | `POST` | `/wda/homescreen` | 返回主屏 |
+| 应用 | `POST` | `/wda/homescreen` | 返回主屏（**全局端点**，不要加 session 前缀） |
 | 应用 | `POST` | `/wda/pressButton` | 系统按键（home、音量等） |
 | 弹窗 | `GET` | `/alert/text` | 读取弹窗文本 |
 | 弹窗 | `POST` | `/alert/accept` | 接受弹窗 |

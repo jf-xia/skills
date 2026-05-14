@@ -19,10 +19,8 @@
 
 ```tree
 skills/
-├── .agents/                    # Agent 运行时目录
-│   ├── skills/                 # 技能软链接目录
-│   └── tmp/                    # 临时文件目录
 ├── skills/                     # 技能开发目录
+│   │── ...                     # 其他技能
 │   └── ios-use/                # iOS 使用能力技能
 │       ├── SKILL.md            # 技能主文档
 │       ├── references/         # 详细参考文档
