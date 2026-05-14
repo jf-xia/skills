@@ -56,10 +56,23 @@ curl -s http://<HOST>:8100/screenshot | jq -r '.value' | base64 --decode > scree
 
 ### 关闭应用流程
 1. **Observe**：截屏确认当前应用状态
-2. **Act**：`POST /wda/homescreen`（**全局端点**）或 `POST /wda/apps/terminate`
+2. **Act**：`POST /wda/apps/terminate`（推荐）或 `POST /wda/homescreen`
 3. **Verify**：截屏确认回到主屏
 
-> ⚠️ `/wda/homescreen` 是全局端点，错误写法 `/session/<ID>/wda/homescreen` 会报 `unknown command`。
+> ⚠️ `/wda/homescreen` 是全局端点，但某些设备可能不支持。推荐使用 `/wda/apps/terminate`。
+> 错误写法 `/session/<ID>/wda/homescreen` 会报 `unknown command`。
+
+## WDA API 端点说明
+
+| 端点 | 是否全局 | 说明 |
+|------|----------|------|
+| `/wda/homescreen` | ✅ 是 | 回到主屏，但某些设备不支持 |
+| `/wda/apps/terminate` | ❌ 需 session | `POST /session/<ID>/wda/apps/terminate` |
+| `/wda/apps/activate` | ❌ 需 session | `POST /session/<ID>/wda/apps/activate` |
+| `/wda/tap` | ❌ 需 session | `POST /session/<ID>/wda/tap` |
+| `/wda/swipe` | ❌ 需 session | `POST /session/<ID>/wda/swipe` |
+
+> 💡 实际使用中，`/wda/apps/terminate` 比 `/wda/homescreen` 更可靠。
 
 ## 坐标系要点
 

@@ -107,6 +107,7 @@ fi
 
 # 3. 激活应用
 echo "3. 激活应用..." >&2
+base_url="http://${host}:${port}"
 active_app_json='{}'
 if [[ -n "${bundle_id}" ]]; then
   # 尝试激活应用

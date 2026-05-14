@@ -58,18 +58,24 @@ ios_wda_cache_merge_json() {
 
   ios_wda_init_cache_file
   
-  # 使用文件锁避免并发写入
-  exec 200>"${lock_file}"
-  flock -w 5 200 || {
-    echo "警告: 获取缓存锁超时" >&2
-    return 1
-  }
+  # 使用 mkdir 作为简单锁（兼容 macOS，无 flock）
+  local lock_dir="${lock_file}.d"
+  local wait_count=0
+  while ! mkdir "${lock_dir}" 2>/dev/null; do
+    sleep 0.1
+    wait_count=$((wait_count + 1))
+    if [[ ${wait_count} -ge 50 ]]; then
+      echo "警告: 获取缓存锁超时" >&2
+      return 1
+    fi
+  done
+  trap 'rmdir "${lock_dir}" 2>/dev/null' RETURN
   
   tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
   jq -s '.[0] * .[1]' "${IOS_WDA_CACHE_FILE}" <(printf '%s\n' "${payload}") >"${tmp_file}"
   mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
   
-  flock -u 200
+  rmdir "${lock_dir}" 2>/dev/null
 }
 
 ios_wda_cache_clear_session() {
@@ -78,18 +84,24 @@ ios_wda_cache_clear_session() {
 
   ios_wda_init_cache_file
   
-  # 使用文件锁避免并发写入
-  exec 200>"${lock_file}"
-  flock -w 5 200 || {
-    echo "警告: 获取缓存锁超时" >&2
-    return 1
-  }
+  # 使用 mkdir 作为简单锁（兼容 macOS，无 flock）
+  local lock_dir="${lock_file}.d"
+  local wait_count=0
+  while ! mkdir "${lock_dir}" 2>/dev/null; do
+    sleep 0.1
+    wait_count=$((wait_count + 1))
+    if [[ ${wait_count} -ge 50 ]]; then
+      echo "警告: 获取缓存锁超时" >&2
+      return 1
+    fi
+  done
+  trap 'rmdir "${lock_dir}" 2>/dev/null' RETURN
   
   tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
   jq '.session = {}' "${IOS_WDA_CACHE_FILE}" >"${tmp_file}"
   mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
   
-  flock -u 200
+  rmdir "${lock_dir}" 2>/dev/null
 }
 
 ios_wda_local_listener_pid() {
