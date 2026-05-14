@@ -1,78 +1,66 @@
 # WDA 命令参考
 
 ## 使用原则
-- 先确认 `GET /status` 可用，再调用需要 session 的接口。
-- 优先使用元素级接口，只有在没有稳定元素时才退回坐标点击。
-- 简单手势和元素坐标使用元素左上角为基准；与 W3C Actions 的中心点语义不同。
 
-## 坐标参考系
+- 先确认 `GET /status` 可用，再调需要 session 的接口
+- 优先元素级接口，无稳定元素时退回坐标点击
+- 简单手势坐标基准是元素左上角；W3C Actions 以中心点为基准，两者不混用
 
-### 屏幕绝对坐标
-- 原点在屏幕左上角 `(0, 0)`。
-- `x` 向右递增，`y` 向下递增。
-- 适用于 `/wda/tap`、`/wda/swipe`、`/wda/dragfromtoforduration` 这类直接传坐标的操作。
+## 坐标系
 
-### 元素相对坐标
-- 当请求同时绑定元素和偏移量时，偏移基准是元素边界左上角。
-- 这与部分 W3C Actions 实现使用元素中心点为基准的语义不同。
-- 如果视觉模型输出的是元素中心点，换算到 WDA 简单手势前，先减去元素左上角坐标再作为偏移量使用。
-
-### 常见误区
-- 不要把截图中的绝对坐标直接当作元素相对偏移。
-- 不要把 W3C Actions 的中心点语义直接套到 `/wda/tap` 一类简单手势上。
-- 如果点击稳定偏移半个元素宽高，优先排查是否把中心点误当成左上角偏移。
+- **屏幕绝对坐标**：原点 `(0,0)` 左上角，x 右增，y 下增。用于 `/wda/tap`、`/wda/swipe`、`/wda/dragfromtoforduration`
+- **元素相对坐标**：偏移基准是元素边界左上角（非中心）。视觉模型输出中心点时需先换算
+- **常见误区**：不要把截图绝对坐标当元素偏移；不要把 W3C 中心点语义套到 `/wda/tap`
 
 ## Session 与健康检查
 
 | 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| `POST` | `/session` | 创建会话，返回 `sessionId` 与能力集 |
-| `DELETE` | `/session` | 结束当前会话 |
-| `GET` | `/session` | 查询当前活动会话 |
-| `GET` | `/status` | 查询 WDA 服务状态，无需 session |
-| `GET` | `/wda/healthcheck` | 轻量健康检查，无需 session |
+|------|------|------|
+| `POST` | `/session` | 创建会话 |
+| `DELETE` | `/session` | 结束会话 |
+| `GET` | `/session` | 查询活动会话 |
+| `GET` | `/status` | 服务状态，无需 session |
+| `GET` | `/wda/healthcheck` | 轻量健康检查 |
 
-## 元素属性与基础动作
+## 元素属性与动作
 
 | 类别 | 方法 | 路径 | 说明 |
-| --- | --- | --- | --- |
-| 属性 | `GET` | `/element/:uuid/text` | 获取文本；常用于读取 label 或 value |
-| 属性 | `GET` | `/element/:uuid/rect` | 获取位置与尺寸 |
-| 属性 | `GET` | `/element/:uuid/enabled` | 获取可用状态 |
-| 属性 | `GET` | `/element/:uuid/displayed` | 获取可见状态 |
-| 属性 | `GET` | `/element/:uuid/selected` | 获取选中状态 |
-| 属性 | `GET` | `/element/:uuid/attribute/:name` | 读取任意 WebDriver 属性 |
-| 动作 | `POST` | `/element/:uuid/click` | 点击元素 |
+|------|------|------|------|
+| 属性 | `GET` | `/element/:uuid/text` | 获取文本 |
+| 属性 | `GET` | `/element/:uuid/rect` | 位置与尺寸 |
+| 属性 | `GET` | `/element/:uuid/enabled` | 可用状态 |
+| 属性 | `GET` | `/element/:uuid/displayed` | 可见状态 |
+| 属性 | `GET` | `/element/:uuid/selected` | 选中状态 |
+| 属性 | `GET` | `/element/:uuid/attribute/:name` | 任意属性 |
+| 动作 | `POST` | `/element/:uuid/click` | 点击 |
 | 动作 | `POST` | `/element/:uuid/clear` | 清空文本 |
-| 动作 | `POST` | `/element/:uuid/value` | 输入文本或设置可调元素值 |
-| 动作 | `POST` | `/wda/pickerwheel/:uuid/select` | 沿给定方向调整 `PickerWheel`，可带目标值与尝试次数 |
-
-元素输入示例：
+| 动作 | `POST` | `/element/:uuid/value` | 输入文本 |
 
 ```bash
+# 输入示例
 curl -X POST http://localhost:8100/session/$SESSION_ID/element/$ELEMENT_ID/value \
-	-H "Content-Type: application/json" \
-	-d '{"value": ["hello"], "frequency": 30}'
+  -H "Content-Type: application/json" -d '{"value": ["hello"], "frequency": 30}'
 ```
 
-PickerWheel 示例：
+## PickerWheel
 
 ```bash
 curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pickerwheel/$ELEMENT_ID/select \
-	-H "Content-Type: application/json" \
-	-d '{"order": "next", "value": "11 o’clock", "maxAttempts": 8}'
+  -H "Content-Type: application/json" \
+  -d '{"order": "next", "value": "11 o'clock", "maxAttempts": 8}'
 ```
 
-说明：
-- `PickerWheel` 不要优先走 `/element/:uuid/value`；专用路由的行为更接近真实拨轮。
-- 该接口每次调用会先移动一格，再判断是否达到目标值；如果只是想确认当前值，不要再次调用它。
+- 优先用专用路由，不走 `/element/:uuid/value`
+- 语义：每次调用先移动一格再判断是否达到目标值
+- 已在目标值时继续调用可能拨离目标
+- 多轮控件（如时间选择器）一次只改一个 wheel，关闭弹层后重新读取
 
-## 简单手势接口
+## 简单手势
 
 | 方法 | 路径 | 关键参数 | 说明 |
-| --- | --- | --- | --- |
-| `POST` | `/wda/tap` | `x`, `y` 可选 | 点击坐标或目标元素 |
-| `POST` | `/wda/doubleTap` | `x`, `y` 可选 | 双击 |
+|------|------|----------|------|
+| `POST` | `/wda/tap` | `x`, `y` | 点击坐标或元素 |
+| `POST` | `/wda/doubleTap` | `x`, `y` | 双击 |
 | `POST` | `/wda/twoFingerTap` | 元素或坐标 | 双指点击 |
 | `POST` | `/wda/tapWithNumberOfTaps` | `numberOfTaps`, `numberOfTouches` | 自定义点击次数 |
 | `POST` | `/wda/touchAndHold` | `duration`, `x`, `y` | 长按 |
@@ -81,39 +69,57 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pickerwheel/$ELEMENT_
 | `POST` | `/wda/rotate` | `rotation`, `velocity` | 旋转 |
 | `POST` | `/wda/dragfromtoforduration` | `fromX`, `fromY`, `toX`, `toY`, `duration` | 拖拽 |
 | `POST` | `/wda/forceTouch` | `pressure`, `duration`, `x`, `y` | 压感触控 |
-| `POST` | `/wda/scroll` | `direction`, `distance` 或 `name` / `predicateString` | 滚动或滚到目标 |
-
-滑动示例：
+| `POST` | `/wda/scroll` | `direction`/`distance`/`name`/`predicateString` | 滚动 |
 
 ```bash
+# 滑动
 curl -X POST http://localhost:8100/session/$SESSION_ID/wda/swipe \
-	-H "Content-Type: application/json" \
-	-d '{"direction": "up", "velocity": 1200}'
-```
+  -H "Content-Type: application/json" -d '{"direction": "up", "velocity": 1200}'
 
-滚动示例：
-
-```bash
+# 滚动到目标
 curl -X POST http://localhost:8100/session/$SESSION_ID/wda/scroll \
-	-H "Content-Type: application/json" \
-	-d '{"predicateString": "label BEGINSWITH \"Item\""}'
+  -H "Content-Type: application/json" -d '{"predicateString": "label BEGINSWITH \"Item\""}'
 ```
 
-## 页面与调试接口
+## 页面与调试
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/source` | 获取页面树，支持 `format=xml|json|description` |
-| `GET` | `/wda/accessibleSource` | 获取仅包含可访问元素的简化树 |
-| `GET` | `/screenshot` | 获取 Base64 全屏截图；可在无 session 时使用 |
-
-页面源码示例：
+|------|------|------|
+| `GET` | `/source` | 页面树，支持 `format=xml\|json\|description` |
+| `GET` | `/wda/accessibleSource` | 精简可访问元素树 |
+| `GET` | `/screenshot` | Base64 截图，可在无 session 时使用 |
 
 ```bash
 curl "http://localhost:8100/session/$SESSION_ID/source?format=json"
 ```
 
-## 应用与设备控制索引
-- 应用生命周期、弹窗、锁屏、方向、位置和设备信息，见 `./app-and-device-control.md`。
-- 文本输入、键盘策略和频率参数，见 `./input-and-keyboard.md`。
-- 性能参数与视觉闭环策略，见 `./visual-and-performance.md`。
+## 应用与设备控制
+
+| 类别 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| 应用 | `POST` | `/wda/apps/launch` | 启动应用 |
+| 应用 | `POST` | `/wda/apps/activate` | 切到前台 |
+| 应用 | `POST` | `/wda/apps/terminate` | 终止应用 |
+| 应用 | `POST` | `/wda/apps/state` | 查询状态（1=未运行,4=前台） |
+| 应用 | `POST` | `/wda/homescreen` | 返回主屏 |
+| 应用 | `POST` | `/wda/pressButton` | 系统按键（home、音量等） |
+| 弹窗 | `GET` | `/alert/text` | 读取弹窗文本 |
+| 弹窗 | `POST` | `/alert/accept` | 接受弹窗 |
+| 弹窗 | `POST` | `/alert/dismiss` | 关闭弹窗 |
+| 弹窗 | `GET` | `/wda/alert/buttons` | 列出弹窗按钮 |
+| 设备 | `POST` | `/wda/lock` | 锁屏 |
+| 设备 | `POST` | `/wda/unlock` | 解锁 |
+| 设备 | `GET/POST` | `/orientation` | 读取/设置方向 |
+| 设备 | `POST` | `/wda/simulatedLocation` | 模拟位置（iOS 16.4+） |
+| 设备 | `GET` | `/wda/screen` | 屏幕尺寸 |
+| 设备 | `GET` | `/wda/device/info` | 设备信息 |
+| 设备 | `GET` | `/wda/activeAppInfo` | 前台应用信息 |
+| 设备 | `GET` | `/wda/batteryInfo` | 电量信息 |
+| 设备 | `GET` | `/wda/device/location` | 设备地理位置 |
+
+### 应用控制要点
+
+- `/wda/apps/activate` 适合把已运行应用切回前台
+- 回主屏优先 `/wda/homescreen`；`activate com.apple.springboard` 不可靠
+- 激活后用 `/wda/activeAppInfo` 确认前台是否真正切换
+- 截图出现 shield/blocked 覆盖层 → 系统策略拦截，非点击失败

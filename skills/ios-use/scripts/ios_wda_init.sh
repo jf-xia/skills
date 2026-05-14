@@ -134,7 +134,8 @@ if [[ "${wda_ready}" != "true" ]]; then
   
   # 启动 WDA
   wda_log="${run_dir}/wda-background.log"
-  cd /Users/jianfengxia/work/WebDriverAgent
+  wda_project_dir="$(dirname "${project_path}")"
+  cd "${wda_project_dir}"
   nohup xcodebuild -project "${project_path}" -scheme "${scheme}" -destination "id=${device_udid}" test-without-building >"${wda_log}" 2>&1 &
   wda_pid="$!"
   

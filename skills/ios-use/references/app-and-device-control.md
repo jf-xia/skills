@@ -3,105 +3,86 @@
 ## 应用生命周期
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
+|------|------|------|
 | `POST` | `/wda/apps/launch` | 启动应用，可带参数和环境变量 |
-| `POST` | `/wda/apps/activate` | 将应用切到前台 |
-| `POST` | `/wda/apps/terminate` | 终止应用，返回布尔值 |
-| `POST` | `/wda/apps/state` | 查询应用状态 |
-| `GET` | `/wda/apps/list` | 列出活动应用 |
-| `POST` | `/url` | 打开 URL，可指定包名 |
-| `POST` | `/wda/homescreen` | 返回主屏；适合稳定退出当前 App |
-| `POST` | `/wda/pressButton` | 模拟系统按键，例如 `home`、音量键 |
+| `POST` | `/wda/apps/activate` | 切到前台 |
+| `POST` | `/wda/apps/terminate` | 终止应用 |
+| `POST` | `/wda/apps/state` | 查询状态 |
+| `POST` | `/wda/homescreen` | 返回主屏 |
+| `POST` | `/wda/pressButton` | 系统按键（home、音量等） |
 
-说明：
-- `/wda/apps/activate` 更适合把已运行应用切回前台。
-- `/wda/homescreen` 或 `pressButton(home)` 更适合明确回到 SpringBoard；不要把 `activate com.apple.springboard` 当成可靠的“退回桌面”动作。
-- 如果目标 App 尚未运行，或者是备忘录这类系统 App，`activate` 返回成功后仍要立即用 `/wda/activeAppInfo`、页面树或截图确认前台是否真的切换成功。
-- 如果前台仍然是 SpringBoard，优先回退到系统级启动，例如 `ios launch <bundleId>`，再重新验证前台应用。
-- 如果点击某个 App 后前台仍显示为 SpringBoard，但页面树或截图出现了 shield / blocked 覆盖层，优先把它判定为系统策略拦截，而不是点击失败。
+获取已安装应用：`xcrun devicectl device info apps --device <UDID>`
 
-应用状态枚举：
+### 应用状态枚举
 
 | 值 | 常量 | 含义 |
-| --- | --- | --- |
-| `1` | `XCUIApplicationStateNotRunning` | 未运行 |
-| `2` | `XCUIApplicationStateRunningBackgroundSuspended` | 后台挂起 |
-| `3` | `XCUIApplicationStateRunningBackground` | 后台运行 |
-| `4` | `XCUIApplicationStateRunningForeground` | 前台运行 |
+|----|------|------|
+| 1 | `XCUIApplicationStateNotRunning` | 未运行 |
+| 2 | `XCUIApplicationStateRunningBackgroundSuspended` | 后台挂起 |
+| 3 | `XCUIApplicationStateRunningBackground` | 后台运行 |
+| 4 | `XCUIApplicationStateRunningForeground` | 前台运行 |
+
+### 使用要点
+
+- `activate` 适合已运行应用切回前台
+- 回主屏优先 `/wda/homescreen`；`activate com.apple.springboard` 不可靠
+- 激活后用 `/wda/activeAppInfo` 确认前台是否真正切换
+- 系统 App 或首次拉起 → `/wda/activeAppInfo` 判断是否仍停在 SpringBoard
+- WDA 激活未切前台 → 系统级 CLI 直接启动（如 `ios launch <bundleId>`）
+- 截图出现 shield/blocked → 系统策略拦截，非点击失败
 
 ## 系统弹窗
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/alert/text` | 读取当前弹窗文本 |
+|------|------|------|
+| `GET` | `/alert/text` | 读取弹窗文本 |
 | `POST` | `/alert/text` | 向弹窗输入文本 |
-| `POST` | `/alert/accept` | 接受弹窗，可指定按钮名 |
-| `POST` | `/alert/dismiss` | 关闭弹窗，可指定按钮名 |
+| `POST` | `/alert/accept` | 接受弹窗 |
+| `POST` | `/alert/dismiss` | 关闭弹窗 |
 | `GET` | `/wda/alert/buttons` | 列出弹窗按钮 |
 
+优先读按钮列表再决定 accept/dismiss，不要仅凭截图猜测。
 
 ## 锁屏与方向
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/wda/lock` | 锁定屏幕 |
-| `POST` | `/wda/unlock` | 解锁屏幕 |
-| `GET` | `/wda/locked` | 查询是否已锁定 |
-| `GET` | `/orientation` | 读取方向 |
-| `POST` | `/orientation` | 设置方向 |
-| `GET` | `/rotation` | 读取三轴旋转信息 |
-| `POST` | `/rotation` | 设置三轴旋转 |
+|------|------|------|
+| `POST` | `/wda/lock` | 锁屏 |
+| `POST` | `/wda/unlock` | 解锁 |
+| `GET` | `/wda/locked` | 查询锁定状态 |
+| `GET/POST` | `/orientation` | 读取/设置方向 |
+| `GET/POST` | `/rotation` | 三轴旋转 |
 
 ## 模拟位置
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
+|------|------|------|
 | `POST` | `/wda/simulatedLocation` | 设置经纬度 |
 | `GET` | `/wda/simulatedLocation` | 读取当前模拟位置 |
 | `DELETE` | `/wda/simulatedLocation` | 清除模拟位置 |
 
-限制：仅 iOS 可用，且需要 iOS 16.4+ 与 Xcode 14.3+。
+限制：仅 iOS，需 iOS 16.4+ 与 Xcode 14.3+。
 
 ## 屏幕与设备信息
 
 | 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/wda/screen` | 返回屏幕尺寸、状态栏尺寸与缩放比例 |
-| `GET` | `/wda/device/info` | 返回 locale、时区、型号、UUID、UI 风格等信息 |
-| `GET` | `/wda/activeAppInfo` | 返回当前前台应用信息 |
-| `GET` | `/wda/batteryInfo` | 返回电量与电池状态，仅 iOS |
-| `GET` | `/wda/device/location` | 返回当前设备地理位置 |
+|------|------|------|
+| `GET` | `/wda/screen` | 屏幕尺寸、状态栏尺寸、缩放比例 |
+| `GET` | `/wda/device/info` | locale、时区、型号、UUID、UI 风格 |
+| `GET` | `/wda/activeAppInfo` | 前台应用信息 |
+| `GET` | `/wda/batteryInfo` | 电量与电池状态 |
+| `GET` | `/wda/device/location` | 设备地理位置 |
 
-## 剪贴板与扩展能力
-- 某些场景会通过原始 REST 请求访问剪贴板接口，例如读取验证码或一次性口令。
-- 这类接口通常不是最基础的 WDA 主路径能力，使用前先确认当前驱动或服务版本是否暴露对应路由。
-
-示例：
-
-```javascript
-await agent.runWdaRequest('GET', '/wda/getPasteboard')
-```
-
-如果当前环境没有暴露该接口，优先退回 UI 读取、短信通知解析或上层驱动提供的专用 API。
-
-## 系统按键兼容说明
-- 某些 WDA 版本提供 `pressButton` 类接口，可用于 Home、音量等系统按键模拟。
-- 这类接口的路由在不同版本中可能有差异；使用前先确认当前 WDA 版本暴露的具体路径。
-
-示例：
+## 剪贴板
 
 ```bash
-curl -X POST http://localhost:8100/wda/homescreen -H "Content-Type: application/json" -d '{}'
-
-curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pressButton \
-	-H "Content-Type: application/json" \
-	-d '{"name": "home"}'
+# 读取剪贴板（需确认 WDA 版本支持）
+curl -X GET http://localhost:8100/wda/getPasteboard
 ```
 
+接口可能不在所有版本暴露。没有时退回 UI 读取或上层驱动 API。
+
 ## 使用建议
-- 切应用后马上校验前台状态，避免下一步操作还落在旧应用上。
-- 需要稳定回主屏时优先 `/wda/homescreen`；只有在版本不支持该路由时，再退回 `pressButton(home)`。
-- 系统 App 或首次拉起的 App，不要只看 `/wda/apps/activate` 的返回值；要结合 `/wda/activeAppInfo` 判断是否仍停留在 SpringBoard。
-- 如果 WDA 激活接口没有真正把 App 带到前台，优先用系统级 CLI 直接启动，再继续做结构化操作。
-- 系统弹窗优先读按钮列表后再决定 `accept` 或 `dismiss`，不要仅凭截图猜测。
-- 设备信息、屏幕信息和应用状态适合做动作后的确认，不要只依赖视觉结果。
+
+- 切应用后立即校验前台状态
+- 设备/屏幕/应用状态适合做动作后确认，不要只依赖视觉结果

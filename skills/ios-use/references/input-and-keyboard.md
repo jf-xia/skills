@@ -1,25 +1,24 @@
 # 输入与键盘
 
 ## 入口选择
-- 需要对具体元素输入时，优先 `POST /element/:uuid/value`。
-- 需要清空文本时，使用 `POST /element/:uuid/clear`。
-- 当前焦点已经明确、只需要发送键盘字符时，使用 `POST /wda/keys`。
+
+| 场景 | 接口 |
+|------|------|
+| 对具体元素输入 | `POST /element/:uuid/value` |
+| 清空文本 | `POST /element/:uuid/clear` |
+| 已聚焦、只发键盘字符 | `POST /wda/keys` |
 
 ## 元素输入
 
 ```bash
 curl -X POST http://localhost:8100/session/$SESSION_ID/element/$ELEMENT_ID/value \
   -H "Content-Type: application/json" \
-  -d '{
-    "value": ["text"],
-    "frequency": 60
-  }'
+  -d '{"value": ["text"], "frequency": 60}'
 ```
 
-说明：
-- `value` 接受字符串数组，WDA 会拼接成最终输入内容。
-- `frequency` 是可选的字符输入频率；未提供时使用配置默认值。
-- 元素级输入通常会先处理焦点管理，再执行输入。
+- `value` 接受字符串数组，WDA 拼接成最终内容
+- `frequency` 可选，控制字符输入频率
+- 元素级输入会先处理焦点管理
 
 ## 清空文本
 
@@ -27,99 +26,68 @@ curl -X POST http://localhost:8100/session/$SESSION_ID/element/$ELEMENT_ID/value
 curl -X POST http://localhost:8100/session/$SESSION_ID/element/$ELEMENT_ID/clear
 ```
 
-清空失败时不要盲目循环；先判断该控件是否真的是普通文本输入框。
+清空失败时不要盲目循环；先判断控件类型。
 
 ## 向当前焦点发送按键
 
 ```bash
 curl -X POST http://localhost:8100/session/$SESSION_ID/wda/keys \
   -H "Content-Type: application/json" \
-  -d '{
-    "value": ["hello"],
-    "frequency": 30
-  }'
+  -d '{"value": ["hello"], "frequency": 30}'
 ```
 
-适用场景：
-- 元素已经聚焦，但元素定位本身不稳定。
-- 需要发送连续文本到当前焦点。
-- 需要绕开元素级焦点管理。
-
-## 特殊控件
-
-| 控件 | 行为 |
-| --- | --- |
-| `PickerWheel` | 使用目标值调整，而不是普通键盘输入 |
-| `Slider` | 只接受 `0` 到 `1` 的归一化值 |
-| 普通文本元素 | 标准输入与清空流程 |
+适用：元素已聚焦但定位不稳定、需发送连续文本、需绕开焦点管理。
 
 ## PickerWheel
-
-优先使用 WDA 的专用选择接口，而不是 `/element/:uuid/value`：
 
 ```bash
 curl -X POST http://localhost:8100/session/$SESSION_ID/wda/pickerwheel/$ELEMENT_ID/select \
   -H "Content-Type: application/json" \
-  -d '{
-    "order": "next",
-    "value": "58 minutes",
-    "maxAttempts": 30
-  }'
+  -d '{"order": "next", "value": "58 minutes", "maxAttempts": 30}'
 ```
 
-说明：
-- `order` 只能是 `next` 或 `previous`，表示每一步沿哪个方向拨动。
-- `value` 是期望最终值，`maxAttempts` 是最多尝试次数；它们不是“只校验不移动”的参数。
-- 这个路由的语义是：每次调用先移动一格，再检查是否已经达到 `value`。也就是说，如果元素当前其实已经在目标值，继续调用仍可能把它拨离目标。
-- 对时间选择器这类多轮控件，优先一次只改一个 wheel，并在关闭弹层后重新读取界面值，不要把多轮大跨度修改和最终判断混在一次长链里。
-- 如果 `/element/:uuid/value` 返回成功但 UI 没变，优先怀疑控件类型错误，而不是输入频率问题。
-- 当任务依赖“当前时间是否命中时间窗”时，先从设备 UI 或 picker wheel 本身确认 `AM/PM`，不要只根据宿主机时间推断。
+- `order` 只能 `next` 或 `previous`
+- 每次调用先移动一格再检查是否达到目标值
+- 已在目标值时继续调用可能拨离目标
+- 多轮控件一次只改一个 wheel，关闭弹层后重新读取
+- `/element/:uuid/value` 返回成功但 UI 没变 → 优先怀疑控件类型错误
 
-## 频率参数来源
-1. 请求体显式传入的 `frequency`
-2. `FBConfiguration.maxTypingFrequency`
-3. 清空等回退路径使用的默认频率
+## Slider
 
-如果输入明显丢字或太慢，先调整 `frequency`，再判断是否有动画、键盘弹出或页面性能问题。
-
-## 键盘可见性与特殊按键
-- 输入前先确认键盘是否已经出现，尤其是真机场景。
-- iOS 在较新 Xcode 下支持更多特殊键映射，例如 Delete、Return、Tab、Escape、方向键与功能键。
-- 如果脚本需要发送系统键序列，优先保证焦点明确，再发 `/wda/keys`。
-
-## 已知输入陷阱
-- 如果你要求写入结果尽量保持字面一致，优先使用中文序号、非数字前缀，或者在输入后立即回读元素文本做标准化检查。
-- 当输入文本较长、换行较多时，优先用 `--text-file` 方式把正文交给脚本，而不是直接把多行内容内联到 shell 命令里。
+只接受 `0` 到 `1` 的归一化值。
 
 ## 特殊键名称
 
-以下键名在较新 iOS 与 Xcode 组合上更常见，适合在焦点已明确时通过 `/wda/keys` 使用：
+| 键类别 | 键名 |
+|--------|------|
+| 编辑键 | `Delete` `Return` `Enter` `Tab` `Space` `Escape` |
+| 方向键 | `UpArrow` `DownArrow` `LeftArrow` `RightArrow` |
+| 功能键 | `F1`~`F19` |
 
-| 键类别 | 键名 | 说明 |
-| --- | --- | --- |
-| 编辑键 | `Delete` | 退格删除 |
-| 编辑键 | `Return` | 回车 |
-| 编辑键 | `Enter` | 输入确认 |
-| 编辑键 | `Tab` | 制表符 |
-| 编辑键 | `Space` | 空格 |
-| 编辑键 | `Escape` | 退出或关闭当前输入态 |
-| 方向键 | `UpArrow` `DownArrow` `LeftArrow` `RightArrow` | 方向控制 |
-| 功能键 | `F1` 到 `F19` | 功能键 |
+- 先保证焦点明确，再发 `/wda/keys`
+- 旧系统/Xcode 组合特殊键覆盖可能较弱
 
-使用建议：
-- 先保证目标输入框已获得焦点，再发送特殊键。
-- 旧系统或旧 Xcode 组合的特殊键覆盖可能较弱；如果无效，先回退到普通文本输入或 UI 级确认动作。
+## 频率参数
+
+优先级：请求体 `frequency` → `FBConfiguration.maxTypingFrequency` → 默认值
+
+丢字或太慢 → 先调 `frequency`，再排查动画/键盘弹出/页面性能。
 
 ## 平台差异
 
 | 特性 | iOS | tvOS |
-| --- | --- | --- |
-| 点击激活键盘 | 支持 | 一般不依赖点击激活 |
-| 清空优化 | 可能使用快捷清空策略 | 能力受限 |
-| 特殊键支持 | 更完整 | 较弱 |
-| 重试策略 | 常见多策略回退 | 一般更保守 |
+|------|-----|------|
+| 点击激活键盘 | 支持 | 一般不依赖 |
+| 清空优化 | 可能用快捷策略 | 能力受限 |
+| 特殊键 | 更完整 | 较弱 |
+
+## 已知陷阱
+
+- 长文本/多行 → 用 `--text-file`，避免 shell 转义
+- 输入后被 App 自动改写 → 应用层格式化，非 WDA 失败
+- 时间窗/日程页面 → 以设备 UI 显示的 AM/PM 为准，不按宿主机时间推断
+- Notes 等应用自动编号 → 应用层改写，不按 WDA 丢字排查
 
 ## 完成检查
-- 输入后重新读取元素文本，或通过截图确认 UI 已更新。
-- 如果输入未生效，优先判断焦点、键盘和控件类型，而不是立即提高手速或重复重试。
-- 如果输入已生效但内容被 App 自动改写，记录这是应用层格式化行为，不要误判为 WDA 输入失败。
+
+输入后重新读取元素文本或截图确认 UI 已更新。输入未生效 → 先判焦点/键盘/控件类型。

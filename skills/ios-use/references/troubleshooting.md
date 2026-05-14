@@ -1,121 +1,87 @@
 # 故障排查
 
-## 先做最短检查
-1. `GET /status` 是否返回 200。
-2. 如果需要 session，确认 `POST /session` 是否成功并保留了新的 `sessionId`。
-3. 如果元素操作失败，确认页面是否已刷新、滚动或弹窗切换，避免复用旧元素 ID。
-4. 如果输入失败，先判断键盘是否真的可见，再选择元素级输入还是 `/wda/keys`。
+## 最短检查
 
-## 常见故障矩阵
+1. `GET /status` 返回 200？
+2. 需要 session 时，`POST /session` 成功？
+3. 元素操作失败 → 页面是否已刷新/滚动/弹窗切换？
+4. 输入失败 → 键盘是否可见？控件类型是否正确？
 
-| 症状 | 常见原因 | 优先动作 |
-| --- | --- | --- |
-| `xcodebuild` 启动失败或 Code 65 | 签名错误、Bundle ID 冲突、团队 ID 缺失 | 修复签名、改唯一 Bundle ID、确认开发团队 |
-| `curl /status` 无响应 | WDA 未启动、端口未转发、`iproxy` 中断 | 重启 WDA，检查 `iproxy 8100 8100 <UDID>` |
-| `curl /status` 能连上 `8100` 但立刻 `connection reset by peer` | 本机端口被旧转发占用、`iproxy` 指向错误设备、设备端没有对应 WDA | 先查 `lsof` 和 `ps` 确认 `8100` 的监听者与目标设备，再重建转发 |
-| `iproxy` 持续打印 `New connection` / `Requesting connection` | 本机正在连续做 WDA 健康检查、截图或页面树请求 | 先看 `curl /status` 是否仍返回 200；如果成功，这些日志通常是正常流量，不需要额外恢复 |
-| `xcodebuild` 说设备不存在，但别的工具还能列出该设备 | 工具间缓存或枚举口径不同，使用了错误 UDID | 回到 `xcrun xctrace list devices` 和 `xcodebuild` destination 列表，改用 Xcode 当前可见设备 |
-| `Session Not Created` | 能力集错误、App 路径无效、设备未准备好 | 精简 capabilities，确认 `bundleId` / `app` / `udid` |
-| `No Such Driver` / 404 | session 已失效 | 重建 session，不要继续用旧 `sessionId` |
-| `Element Not Visible` | 元素在屏外、被遮挡、动画未结束 | 先滚动或等待稳定，再重试 |
-| `Stale Element Reference` | 页面树变化，元素缓存失效 | 重新获取 source 并重新查找元素 |
-| `Timeout` / 408 | 页面过慢、等待条件不合理 | 拉长连接超时，拆分动作，减少全树扫描 |
-| 输入无效 | 未聚焦、键盘未起、控件类型特殊 | 先点击聚焦，再用正确输入接口 |
-| `PickerWheel` 看似调用成功，但值不稳定、越调越偏或落到意外时间 | 把 `PickerWheel` 当普通输入框处理了，或错误理解了 `/wda/pickerwheel/:uuid/select` 的移动语义 | 改用专用 picker wheel 路由，一次只调整一个 wheel，并在每次关闭弹层后重新读取实际值 |
-| `/wda/apps/activate` 返回成功，但前台仍是 SpringBoard | 目标 App 未运行、系统 App 激活链路未真正切前台 | 先查 `/wda/activeAppInfo`，必要时用 `ios launch <bundleId>` 启动，再重新验证 |
-| 点击其他 App 后前台仍是 SpringBoard，但截图出现 shield / blocked 覆盖层 | 这不是点击失败，而是系统策略或限制正在拦截目标 App | 读取页面树或截图确认遮罩内容，再结合下游行为把它判定为“规则已生效” |
-| 点了 `Save` 但后续行为仍沿用旧规则 | App 层校验拒绝了本次配置、时间窗仍包含当前时间，或表单只是局部更新未持久化 | 立即重读表单值、查找错误文案或提示，再做一次下游行为验证，不要把按钮点击成功当成规则生效 |
-| 缓存文件存在，但本次仍无法继续 | 缓存里的 UDID、`iproxy` 目标或 `sessionId` 已失效 | 先跑 `ios_wda_init.sh`，按输出决定是否重建转发或重建 session |
-| 输入成功，但正文内容和原始文本不完全一致 | 应用自动编号、自动格式化或富文本规则介入 | 先区分是否为 App 自动改写，再决定清空重写或接受格式化结果 |
+## 故障矩阵
 
-## 错误码与异常类型映射
+| 症状 | 原因 | 动作 |
+|------|------|------|
+| `xcodebuild` Code 65 | 签名错误/Bundle ID 冲突/团队 ID 缺失 | 修复签名、改唯一 Bundle ID、确认开发团队 |
+| `/status` 无响应 | WDA 未启动/端口未转发 | 重启 WDA，检查 `iproxy 8100 8100 <UDID>` |
+| `connection reset by peer` | 端口被旧转发占用/iproxy 指向错误设备 | `lsof` + `ps` 确认 8100 监听者与目标设备 |
+| `iproxy` 打印 `New connection` | 正常流量日志 | 先看 `/status` 是否 200 |
+| 设备不存在（其他工具可列） | 工具枚举口径不同 | 回到 `xcrun xctrace list devices` 取 Xcode 可见设备 |
+| `Session Not Created` | 能力集错误/App 路径无效 | 精简 capabilities，确认 bundleId/app/udid |
+| `No Such Driver` / 404 | Session 失效 | 重建 session，不复用旧 ID |
+| `Element Not Visible` | 元素在屏外/被遮挡/动画未结束 | 先滚动或等待稳定 |
+| `Stale Element Reference` | 页面树变化 | 重新获取 source 并重新查找 |
+| `Timeout` / 408 | 页面过慢/等待条件不合理 | 拉长超时、拆分动作、减少全树扫描 |
+| 输入无效 | 未聚焦/键盘未起/控件特殊 | 先点击聚焦，再用正确接口 |
+| PickerWheel 值越调越偏 | 当成普通输入框处理 | 改用专用路由，一次只改一个 wheel |
+| `activate` 返回成功但前台是 SpringBoard | App 未运行/系统 App 激活链路问题 | 查 `/wda/activeAppInfo`，必要时 `ios launch` |
+| 截图出现 shield/blocked | 系统策略拦截 | 读页面树确认遮罩内容 |
+| 缓存存在但无法继续 | UDID/iproxy/sessionId 失效 | 跑 `ios_wda_init.sh`，按输出重建 |
+| 输入成功但内容不一致 | App 自动格式化 | 先区分是否应用层改写 |
 
-| HTTP 状态码 | 异常类型 | 含义 | AI 应采取的动作 |
-| --- | --- | --- | --- |
-| `400` | `FBInvalidArgumentException` | 请求体格式错误或参数值无效 | 检查 JSON 结构、字段名、字段类型和取值范围 |
-| `404` | `FBSessionDoesNotExistException` | session 已失效或不存在 | 重新创建 session，不要继续复用旧 `sessionId` 或旧元素 ID |
-| `408` | `FBTimeoutException` | 页面响应过慢或等待条件不成立 | 先确认页面状态，再决定延长等待、拆分动作或原位重试 |
-| `500` | `FBSessionCreationException` | session 创建失败 | 精简 capabilities，检查 `bundleId`、`app`、`udid` 和设备准备状态 |
-| `500` | `FBApplicationCrashedException` | 目标应用崩溃或无法维持有效状态 | 重新拉起应用，必要时重建 session，并保留崩溃前后的日志与截图 |
-| `400` | `FBElementNotVisibleException` | 元素不可见或当前不可交互 | 先滚动、等待稳定或切换定位策略，再重试动作 |
-| `404` | `FBStaleElementException` | 元素快照已失效 | 重新读取 `/source`，重新定位元素，不复用旧 UUID |
+## 错误码
 
-使用建议：
-- 优先根据 HTTP 状态码判断恢复路径，再结合错误文本细化处理。
-- 如果同时出现 `404` 和元素操作失败，先判定是 session 失效还是元素缓存失效，再决定重建 session 还是只重建元素定位。
+| HTTP | 异常 | 动作 |
+|------|------|------|
+| 400 | `FBInvalidArgumentException` | 检查 JSON 结构、字段名/类型/取值范围 |
+| 404 | `FBSessionDoesNotExistException` | 重建 session |
+| 408 | `FBTimeoutException` | 确认页面状态，延长等待或拆分动作 |
+| 500 | `FBSessionCreationException` | 精简 capabilities，检查 bundleId/app/udid |
+| 500 | `FBApplicationCrashedException` | 重新拉起应用，保留日志与截图 |
+| 400 | `FBElementNotVisibleException` | 滚动、等待稳定或切换定位策略 |
+| 404 | `FBStaleElementException` | 重读 `/source`，重新定位 |
+
+优先按 HTTP 状态码判断恢复路径，再结合错误文本细化。
 
 ## 自愈顺序
-1. 原位重试一次，仅适用于偶发点击或输入失败。
-2. 重新拉取 `/source` 或截图，确认页面是否已变化。
-3. 重建当前元素定位，不复用旧 UUID。
-4. 重新创建 session。
-5. 仍失败时，重启 WDA；真机同时检查签名、端口转发和设备信任状态。
-6. 如果失败点来自缓存复用，清理或覆盖 `./tmp/ios-use-cache.json` 中的无效字段，再重新走脚本化预检，而不是继续用旧缓存值盲试。
 
-## 真机专项问题
-- 先用 Xcode 原生命令确认设备仍在线。
-- 如果 `xcodebuildmcp`、`go-ios`、旧日志里的 UDID 与 Xcode 当前看到的不一致，以 Xcode 可用 destination 里的在线设备为准。
-- 如果已构建过 WDA，优先 `test-without-building`；只有启动失败时再回退到完整 `test`。
-- 对真机并行任务，确认本地端口和 `iproxy` 没有冲突。
-- 对单机单设备场景，仍要检查本机 `8100` 是否残留上一次会话的 `iproxy`，不要默认当前监听就是本次目标设备。
+1. 原位重试一次（仅偶发点击/输入失败）
+2. 重拉 `/source` 或截图，确认页面是否变化
+3. 重建元素定位，不复用旧 UUID
+4. 重建 session
+5. 重启 WDA（真机同时检查签名、端口转发、设备信任）
+6. 缓存失效 → 清理 `./tmp/ios-use-cache.json`，重新走脚本预检
 
-### 诊断命令
+## 真机专项
 
-```bash
-# 检查设备是否在线
-xcrun xctrace list devices
+- 先用 `xcrun xctrace list devices` 确认设备在线
+- UDID 以 Xcode 当前可见 destination 为准
+- 已构建过 WDA → 优先 `test-without-building`，失败再 `test`
+- 并行任务确认端口和 iproxy 无冲突
+- 单设备也要检查本机 8100 是否残留旧 iproxy
 
-# 检查 iproxy 状态
-lsof -i :8100
-ps aux | grep iproxy
-
-# 检查 WDA 状态（本地）
-curl -s http://127.0.0.1:8100/status
-
-# 检查 WDA 状态（设备 IP）
-curl -s http://192.168.1.107:8100/status
-
-# 检查缓存文件
-cat ./tmp/ios-use-cache.json | jq '.'
-
-# 检查设备 IP
-cat ./tmp/ios-use-cache.json | jq '.connection.deviceIp'
-
-# 检查 WDA 日志
-cat ./tmp/*/wda-background.log
-```
-
-## 信息不足时的代码库追问
-- 当已经提供的信息不足以继续判断，或者需要确认更底层的实现细节、路由来源、异常来源、参数语义时，可以使用 deepwiki 的 CLI 直接询问 WebDriverAgent 代码库。
-- 推荐仓库：`appium/WebDriverAgent`。
-- 常用命令形式：`dw aq -r "appium/WebDriverAgent" -q "<你的问题>"`
-
-使用示例：
+## 诊断命令
 
 ```bash
-dw aq -r "appium/WebDriverAgent" -q "raw REST probing 举例说明"
-dw aq -r "appium/WebDriverAgent" -q "POST /session 在 WebDriverAgent 里经过哪些 handler 和对象"
-dw aq -r "appium/WebDriverAgent" -q "element/:uuid/value 的输入链路和 frequency 参数是怎么生效的"
-dw aq -r "appium/WebDriverAgent" -q "No Such Driver 和 Stale Element 在代码里分别从哪里抛出"
-dw aq -r "appium/WebDriverAgent" -q "waitForQuiescence 相关逻辑在哪些文件里，具体影响哪些动作"
-dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径有什么差异"
+xcrun xctrace list devices                        # 设备在线
+lsof -i :8100                                      # 端口监听
+ps aux | grep iproxy                               # iproxy 进程
+curl -s http://127.0.0.1:8100/status               # WDA 状态（本地）
+curl -s http://<DEVICE_IP>:8100/status             # WDA 状态（设备 IP）
+cat ./tmp/ios-use-cache.json | jq '.'              # 缓存内容
+cat ./tmp/*/wda-background.log                     # WDA 日志
 ```
 
-适合追问的内容：
-- 某个 REST 路由由哪个 handler、command 或 category 实现。
-- 某个异常、HTTP 状态码或错误文本是在什么条件下抛出的。
-- 某个 capability、setting 或内部参数在代码里的实际作用范围。
-- 某个接口在裸 WDA、上层 driver 封装和 XCTest 底层之间分别由谁负责。
+## 代码库追问
 
-## 输入与键盘专项问题
-- 文本框无响应时，先确认元素是否已经成为第一响应者。
-- 清空失败时，不要盲目循环；检查是否是 `PickerWheel`、`Slider` 或只读控件。
-- 已有焦点但元素定位不稳定时，用 `/wda/keys` 代替元素级输入。
-- 如果 Notes 等应用把阿拉伯数字序号自动改成编号列表，优先把它归类为“应用层改写”，不要按“WDA 丢字”排查。
-- 对时间窗或日程类页面，先确认设备 UI 显示的是 `AM` 还是 `PM`，再判断当前时间是否处于目标区间；宿主机时区和设备表现不一致时，以设备 UI 为准。
+深度问题可用 `dw` CLI 问 WebDriverAgent 代码库：
 
-## 建议保留的诊断信息
-- 设备 UDID、平台类型、WDA 端口和 `sessionId`
-- 最近一次 `xcodebuild` 或 `curl` 的错误文本
-- 失败前后的 `/source` 或截图
-- 使用的关键 capabilities 与 settings
+```bash
+dw aq -r "appium/WebDriverAgent" -q "POST /session 经过哪些 handler"
+dw aq -r "appium/WebDriverAgent" -q "element/:uuid/value 的 frequency 参数如何生效"
+dw aq -r "appium/WebDriverAgent" -q "No Such Driver 从哪里抛出"
+dw aq -r "appium/WebDriverAgent" -q "accessibleSource 和 source 的生成路径差异"
+```
+
+## 诊断信息保留
+
+设备 UDID、平台类型、WDA 端口、sessionId、最近一次错误文本、失败前后 source/截图、使用的 capabilities。
