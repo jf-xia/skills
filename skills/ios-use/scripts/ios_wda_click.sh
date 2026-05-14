@@ -31,6 +31,12 @@ VERIFY="false"
 HOST="${IOS_WDA_DEFAULT_HOST}"
 PORT="${IOS_WDA_DEFAULT_PORT}"
 
+# 从缓存中读取设备 IP（如果存在）
+CACHED_HOST="$(ios_wda_cache_get '.connection.host')"
+if [[ -n "${CACHED_HOST}" ]]; then
+  HOST="${CACHED_HOST}"
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --element-id) ELEMENT_ID="$2"; shift 2 ;;
@@ -59,13 +65,31 @@ fi
 
 BASE_URL="http://${HOST}:${PORT}"
 
+# ── 验证 session 有效性 ──
+if ! curl --max-time 5 -sf "${BASE_URL}/session/${SESSION_ID}/source" >/dev/null 2>&1; then
+  echo "warning: session ${SESSION_ID} 无效，尝试创建新 session..." >&2
+  session_manager_result="$("${SCRIPT_DIR}/ios_wda_session_manager.sh" --host "${HOST}" --port "${PORT}" --action ensure 2>/dev/null)"
+  if [[ "$(printf '%s\n' "${session_manager_result}" | jq -r '.ok')" == "true" ]]; then
+    SESSION_ID="$(printf '%s\n' "${session_manager_result}" | jq -r '.sessionId')"
+    echo "   新 session: ${SESSION_ID}" >&2
+  else
+    echo "error: 无法创建有效 session" >&2
+    exit 1
+  fi
+fi
+
 # ── 获取元素 rect ──
 get_element_rect() {
   local rect_json
-  rect_json="$(curl --max-time 10 -sf \
+  rect_json="$(curl --max-time 10 -s \
     "${BASE_URL}/session/${SESSION_ID}/element/${ELEMENT_ID}/rect")"
   if [[ -z "${rect_json}" ]]; then
     echo "error: failed to get element rect for ${ELEMENT_ID}" >&2
+    exit 1
+  fi
+  # 检查是否返回了错误
+  if echo "${rect_json}" | jq -e '.value.error' >/dev/null 2>&1; then
+    echo "error: WDA returned error: $(echo "${rect_json}" | jq -r '.value.message')" >&2
     exit 1
   fi
   printf '%s\n' "${rect_json}"

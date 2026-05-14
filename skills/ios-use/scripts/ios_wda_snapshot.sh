@@ -65,25 +65,32 @@ if [[ -z "${session_id}" ]]; then
   session_id="$(ios_wda_cache_get '.session.id')"
 fi
 
+# 如果没有 session_id，尝试确保 session 有效
 if [[ -z "${session_id}" ]]; then
-  payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" '{ok: false, checkedAt: $checkedAt, reason: "no-session"}')"
-  ios_wda_emit_json "${payload}"
-  exit 2
-fi
-
-# 检查是否需要使用设备 IP（WiFi 连接场景）
-device_ip="$(ios_wda_cache_get '.connection.deviceIp')"
-if [[ -n "${device_ip}" ]]; then
-  # 尝试使用设备 IP 连接
-  if curl --max-time 5 -sf "http://${device_ip}:${port}/status" >/dev/null 2>&1; then
-    host="${device_ip}"
+  echo "没有缓存的 session，尝试创建..." >&2
+  session_manager_result="$("${SCRIPT_DIR}/ios_wda_session_manager.sh" --host "${host}" --port "${port}" --action ensure 2>/dev/null)"
+  if [[ "$(printf '%s\n' "${session_manager_result}" | jq -r '.ok')" == "true" ]]; then
+    session_id="$(printf '%s\n' "${session_manager_result}" | jq -r '.sessionId')"
+    echo "   新 session: ${session_id}" >&2
+  else
+    payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" '{ok: false, checkedAt: $checkedAt, reason: "no-session"}')"
+    ios_wda_emit_json "${payload}"
+    exit 2
   fi
 fi
 
+# 验证 session 有效性
 if ! ios_wda_session_source "${session_id}" "${host}" "${port}" >/dev/null 2>&1; then
-  payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" --arg sessionId "${session_id}" '{ok: false, checkedAt: $checkedAt, reason: "invalid-session", sessionId: $sessionId}')"
-  ios_wda_emit_json "${payload}"
-  exit 3
+  echo "Session ${session_id} 无效，尝试创建新 session..." >&2
+  session_manager_result="$("${SCRIPT_DIR}/ios_wda_session_manager.sh" --host "${host}" --port "${port}" --action ensure 2>/dev/null)"
+  if [[ "$(printf '%s\n' "${session_manager_result}" | jq -r '.ok')" == "true" ]]; then
+    session_id="$(printf '%s\n' "${session_manager_result}" | jq -r '.sessionId')"
+    echo "   新 session: ${session_id}" >&2
+  else
+    payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" --arg sessionId "${session_id}" '{ok: false, checkedAt: $checkedAt, reason: "invalid-session", sessionId: $sessionId}')"
+    ios_wda_emit_json "${payload}"
+    exit 3
+  fi
 fi
 
 if [[ -z "${output_dir}" ]]; then

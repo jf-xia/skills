@@ -134,6 +134,28 @@ bash ios_wda_click.sh --element-id <ID> --strategy offset --x-offset 30 --y-offs
 | 限制与取舍 | [limitations.md](references/limitations.md) |
 | 多次操作失败请使用代码库研究 | [codebase-research.md](references/codebase-research.md) |
 
+## tmux 会话管理
+
+WDA 和 iproxy 使用 tmux 会话运行，便于监控和调试：
+
+```bash
+# 查看所有 tmux 会话
+tmux list-sessions
+
+# 查看 WDA 日志
+tmux attach -t wda-<DEVICE_UDID>
+
+# 查看 iproxy 日志
+tmux attach -t iproxy-<DEVICE_UDID>-<PORT>
+
+# 分离会话（保持后台运行）
+Ctrl+B 然后按 D
+```
+
+**会话命名规则：**
+- WDA: `wda-<DEVICE_UDID>`
+- iproxy: `iproxy-<DEVICE_UDID>-<PORT>`
+
 ## 清理
 ```bash
 bash skills/ios-use/scripts/cleanup_ios_wda.sh

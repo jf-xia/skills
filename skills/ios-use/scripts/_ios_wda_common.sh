@@ -54,25 +54,63 @@ ios_wda_cache_get() {
 ios_wda_cache_merge_json() {
   local payload="$1"
   local tmp_file
+  local lock_file="${IOS_WDA_CACHE_FILE}.lock"
 
   ios_wda_init_cache_file
+  
+  # 使用文件锁避免并发写入
+  exec 200>"${lock_file}"
+  flock -w 5 200 || {
+    echo "警告: 获取缓存锁超时" >&2
+    return 1
+  }
+  
   tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
   jq -s '.[0] * .[1]' "${IOS_WDA_CACHE_FILE}" <(printf '%s\n' "${payload}") >"${tmp_file}"
   mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
+  
+  flock -u 200
 }
 
 ios_wda_cache_clear_session() {
   local tmp_file
+  local lock_file="${IOS_WDA_CACHE_FILE}.lock"
 
   ios_wda_init_cache_file
+  
+  # 使用文件锁避免并发写入
+  exec 200>"${lock_file}"
+  flock -w 5 200 || {
+    echo "警告: 获取缓存锁超时" >&2
+    return 1
+  }
+  
   tmp_file="$(mktemp "${IOS_WDA_TMP_DIR}/ios-use-cache.XXXXXX")"
   jq '.session = {}' "${IOS_WDA_CACHE_FILE}" >"${tmp_file}"
   mv "${tmp_file}" "${IOS_WDA_CACHE_FILE}"
+  
+  flock -u 200
 }
 
 ios_wda_local_listener_pid() {
   local port="${1:-${IOS_WDA_DEFAULT_PORT}}"
   lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
+}
+
+ios_wda_tmux_session_exists() {
+  local session_name="$1"
+  tmux has-session -t "${session_name}" 2>/dev/null
+}
+
+ios_wda_tmux_kill_session() {
+  local session_name="$1"
+  if ios_wda_tmux_session_exists "${session_name}"; then
+    tmux kill-session -t "${session_name}" 2>/dev/null || true
+  fi
+}
+
+ios_wda_tmux_list_sessions() {
+  tmux list-sessions -F "#{session_name}" 2>/dev/null || true
 }
 
 ios_wda_process_args() {
@@ -186,6 +224,17 @@ ios_wda_session_source() {
   local session_id="$1"
   local host="${2:-${IOS_WDA_DEFAULT_HOST}}"
   local port="${3:-${IOS_WDA_DEFAULT_PORT}}"
+  
+  # 首先尝试设备 IP
+  local device_ip
+  device_ip="$(ios_wda_cache_get '.connection.deviceIp')"
+  if [[ -n "${device_ip}" ]]; then
+    if curl --max-time 15 -sf "http://${device_ip}:${port}/session/${session_id}/source" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  
+  # 尝试指定的 host
   curl --max-time 15 -sf "http://${host}:${port}/session/${session_id}/source"
 }
 
@@ -279,12 +328,26 @@ ios_wda_wait_for_ready() {
   local attempt=1
 
   while [[ "${attempt}" -le "${attempts}" ]]; do
+    # 尝试本地连接
     if status_json="$(curl --max-time 2 -sf "http://${host}:${port}/status" 2>/dev/null)"; then
       if [[ "$(printf '%s\n' "${status_json}" | jq -r '.value.ready // false')" == "true" ]]; then
         printf '%s\n' "${status_json}"
         return 0
       fi
     fi
+    
+    # 尝试设备 IP 连接
+    local device_ip
+    device_ip="$(ios_wda_cache_get '.connection.deviceIp')"
+    if [[ -n "${device_ip}" ]]; then
+      if status_json="$(curl --max-time 2 -sf "http://${device_ip}:${port}/status" 2>/dev/null)"; then
+        if [[ "$(printf '%s\n' "${status_json}" | jq -r '.value.ready // false')" == "true" ]]; then
+          printf '%s\n' "${status_json}"
+          return 0
+        fi
+      fi
+    fi
+    
     sleep "${interval}"
     attempt=$((attempt + 1))
   done

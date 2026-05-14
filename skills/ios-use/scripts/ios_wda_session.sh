@@ -68,79 +68,41 @@ echo "   IP: ${host}:${port}" >&2
 
 # 2. 获取或创建 session
 echo "2. 获取或创建 session..." >&2
-base_url="http://${host}:${port}"
-cached_session_id=""
-if [[ -z "${session_id}" ]]; then
-  cached_session_id="$(ios_wda_cache_get '.session.id')"
-  session_id="${cached_session_id}"
+
+# 使用统一的 session 管理器
+session_manager_args=('--host' "${host}" '--port' "${port}")
+if [[ -n "${bundle_id}" ]]; then
+  session_manager_args+=('--bundle-id' "${bundle_id}")
 fi
 
-# 验证 session 是否有效
-validate_session() {
-  local current_session_id="$1"
-  curl --max-time 5 -sf "${base_url}/session/${current_session_id}/source" >/dev/null 2>&1
-}
-
-# 删除现有 session
-delete_existing_session() {
-  local current_session_id="$1"
-  curl -sf -X DELETE "${base_url}/session/${current_session_id}" >/dev/null 2>&1 || \
-    curl -sf -X DELETE "${base_url}/session" >/dev/null 2>&1 || true
-}
-
-# 如果是删除操作
 if [[ "${delete_session}" == "true" ]]; then
-  if [[ -z "${session_id}" ]]; then
-    echo "   没有缓存的 session" >&2
-    payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" '{ok: true, checkedAt: $checkedAt, action: "noop-delete", reason: "no-cached-session"}')"
-    ios_wda_emit_json "${payload}"
-    exit 0
+  session_manager_args+=('--action' 'delete')
+  if [[ -n "${session_id}" ]]; then
+    session_manager_args+=('--session-id' "${session_id}")
   fi
-  delete_existing_session "${session_id}"
-  ios_wda_cache_clear_session
-  echo "   Session 已删除: ${session_id}" >&2
-  payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" --arg sessionId "${session_id}" '{ok: true, checkedAt: $checkedAt, action: "deleted", sessionId: $sessionId}')"
-  ios_wda_emit_json "${payload}"
-  exit 0
+elif [[ "${force_new}" == "true" ]]; then
+  session_manager_args+=('--action' 'create')
+else
+  session_manager_args+=('--action' 'ensure')
 fi
 
-# 创建或复用 session
-action="created"
-if [[ "${force_new}" != "true" && -n "${session_id}" ]] && validate_session "${session_id}"; then
-  action="reused"
-  echo "   复用现有 session: ${session_id}" >&2
-else
-  if [[ -n "${session_id}" && "${force_new}" == "true" ]]; then
-    delete_existing_session "${session_id}"
-  fi
-  
-  echo "   创建新 session..." >&2
-  capabilities_json="$(jq -nc \
-    --arg platformName "iOS" \
-    --arg deviceName "${device_name}" \
-    --arg udid "${device_udid}" \
-    --arg bundleId "${bundle_id}" \
-    --arg appPath "${app_path}" \
-    '{
-      capabilities: {
-        alwaysMatch: (
-          {platformName: $platformName, deviceName: $deviceName, udid: $udid}
-          + (if $bundleId == "" then {} else {bundleId: $bundleId} end)
-          + (if $appPath == "" then {} else {app: $appPath} end)
-        )
-      }
-    }')"
-  
-  create_response="$(curl -sf -X POST "${base_url}/session" -H 'Content-Type: application/json' -d "${capabilities_json}")"
-  session_id="$(printf '%s\n' "${create_response}" | jq -r '.sessionId // .value.sessionId // empty')"
-  
-  if [[ -z "${session_id}" ]]; then
-    echo "   Session 创建失败" >&2
-    payload="$(jq -n --arg checkedAt "$(ios_wda_now_iso)" --argjson response "${create_response}" '{ok: false, checkedAt: $checkedAt, reason: "session-create-failed", response: $response}')"
-    ios_wda_emit_json "${payload}"
-    exit 3
-  fi
-  echo "   Session 创建成功: ${session_id}" >&2
+session_manager_result="$("${SCRIPT_DIR}/ios_wda_session_manager.sh" "${session_manager_args[@]}")"
+session_manager_ok="$(printf '%s\n' "${session_manager_result}" | jq -r '.ok')"
+
+if [[ "${session_manager_ok}" != "true" ]]; then
+  echo "   Session 管理失败" >&2
+  printf '%s\n' "${session_manager_result}" | jq '.'
+  exit 3
+fi
+
+session_id="$(printf '%s\n' "${session_manager_result}" | jq -r '.sessionId')"
+action="$(printf '%s\n' "${session_manager_result}" | jq -r '.action')"
+
+# 如果是删除操作，输出结果并退出
+if [[ "${delete_session}" == "true" ]]; then
+  echo "   Session 已删除" >&2
+  ios_wda_emit_json "${session_manager_result}"
+  exit 0
 fi
 
 # 3. 激活应用
@@ -171,10 +133,10 @@ if [[ -n "${bundle_id}" ]]; then
   fi
 fi
 
-# 4. 更新缓存
+# 4. 更新缓存（session 管理器已更新）
+# 只更新活跃应用信息
 cache_payload="$(jq -n \
   --arg checkedAt "$(ios_wda_now_iso)" \
-  --arg sessionId "${session_id}" \
   --arg bundleId "${bundle_id}" \
   --arg deviceName "${device_name}" \
   --arg udid "${device_udid}" \
@@ -182,7 +144,6 @@ cache_payload="$(jq -n \
   --argjson activeApp "${active_app_json}" \
   '{
     session: {
-      id: $sessionId,
       bundleId: (if $bundleId == "" then null else $bundleId end),
       deviceName: $deviceName,
       udid: $udid,

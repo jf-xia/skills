@@ -64,40 +64,29 @@ echo "   设备: ${device_name} (${device_os}) - ${device_udid}" >&2
 
 # 2. 检查并启动 iproxy
 echo "2. 检查 iproxy..." >&2
-listener_pid="$(ios_wda_local_listener_pid "${port}")"
-listener_args=""
-listener_udid=""
-listener_reusable="false"
-forward_restarted="false"
+iproxy_session="iproxy-${device_udid}-${port}"
 iproxy_log="${IOS_WDA_TMP_DIR}/iproxy-${device_udid}-${port}.log"
 
-if [[ -n "${listener_pid}" ]]; then
-  listener_args="$(ios_wda_process_args "${listener_pid}")"
-  listener_udid="$(ios_wda_extract_udid_from_args "${listener_args}")"
-  if [[ -n "${listener_udid}" && "${listener_udid}" == "${device_udid}" ]]; then
-    listener_reusable="true"
-    echo "   iproxy 已运行 (PID: ${listener_pid})" >&2
+# 检查 tmux 会话是否已存在
+iproxy_running="false"
+if tmux has-session -t "${iproxy_session}" 2>/dev/null; then
+  # 检查会话中的进程是否还在运行
+  if tmux list-panes -t "${iproxy_session}" -F "#{pane_pid}" 2>/dev/null | head -1 | xargs ps -p >/dev/null 2>&1; then
+    iproxy_running="true"
+    echo "   iproxy tmux 会话已存在: ${iproxy_session}" >&2
   else
-    echo "   iproxy 指向错误设备，重启中..." >&2
-    kill "${listener_pid}" >/dev/null 2>&1 || true
-    sleep 1
-    nohup iproxy -u "${device_udid}" "${port}:${port}" >"${iproxy_log}" 2>&1 &
-    listener_pid="$!"
-    listener_args="$(ios_wda_process_args "${listener_pid}")"
-    listener_udid="${device_udid}"
-    listener_reusable="true"
-    forward_restarted="true"
-    echo "   iproxy 已重启 (PID: ${listener_pid})" >&2
+    echo "   iproxy tmux 会话存在但进程已退出，清理中..." >&2
+    tmux kill-session -t "${iproxy_session}" 2>/dev/null || true
   fi
-else
-  echo "   启动 iproxy..." >&2
-  nohup iproxy -u "${device_udid}" "${port}:${port}" >"${iproxy_log}" 2>&1 &
-  listener_pid="$!"
-  listener_args="$(ios_wda_process_args "${listener_pid}")"
-  listener_udid="${device_udid}"
+fi
+
+if [[ "${iproxy_running}" != "true" ]]; then
+  echo "   启动 iproxy (tmux)..." >&2
+  tmux new-session -d -s "${iproxy_session}" "iproxy -u '${device_udid}' '${port}:${port}' 2>&1 | tee '${iproxy_log}'"
+  sleep 1
   listener_reusable="true"
   forward_restarted="true"
-  echo "   iproxy 已启动 (PID: ${listener_pid})" >&2
+  echo "   iproxy 已启动 (tmux session: ${iproxy_session})" >&2
 fi
 
 # 3. 检查 WDA 状态
@@ -124,9 +113,15 @@ else
   fi
 fi
 
-# 4. 如果 WDA 未就绪，启动它
 if [[ "${wda_ready}" != "true" ]]; then
-  echo "4. 启动 WDA (后台)..." >&2
+  echo "4. 启动 WDA (tmux)..." >&2
+  
+  # 清理旧的 WDA tmux 会话
+  wda_session="wda-${device_udid}"
+  if tmux has-session -t "${wda_session}" 2>/dev/null; then
+    echo "   清理旧的 WDA tmux 会话..." >&2
+    tmux kill-session -t "${wda_session}" 2>/dev/null || true
+  fi
   
   # 清理旧的 xcodebuild 进程
   pkill -f "xcodebuild.*WebDriverAgent" 2>/dev/null || true
@@ -136,12 +131,19 @@ if [[ "${wda_ready}" != "true" ]]; then
   wda_log="${run_dir}/wda-background.log"
   wda_project_dir="$(dirname "${project_path}")"
   cd "${wda_project_dir}"
-  nohup xcodebuild -project "${project_path}" -scheme "${scheme}" -destination "id=${device_udid}" test-without-building >"${wda_log}" 2>&1 &
-  wda_pid="$!"
+  tmux new-session -d -s "${wda_session}" "cd '${wda_project_dir}' && xcodebuild -project '${project_path}' -scheme '${scheme}' -destination 'id=${device_udid}' test-without-building 2>&1 | tee '${wda_log}'"
+  # 获取 tmux 会话中的进程 PID
+  wda_pid=$(tmux list-panes -t "${wda_session}" -F "#{pane_pid}" 2>/dev/null | head -1 || echo "")
   
   echo "   等待 WDA ready (最多 ${max_wait} 秒)..." >&2
   waited=0
   while [[ ${waited} -lt ${max_wait} ]]; do
+    # 检查 tmux 会话是否还在运行
+    if ! tmux has-session -t "${wda_session}" 2>/dev/null; then
+      echo "   WDA tmux 会话已退出" >&2
+      break
+    fi
+    
     # 尝试本地连接
     if wda_status="$(curl --max-time 2 -sf "http://${host}:${port}/status" 2>/dev/null)"; then
       if [[ "$(printf '%s\n' "${wda_status}" | jq -r '.value.ready // false')" == "true" ]]; then
@@ -198,14 +200,12 @@ cache_payload="$(jq -n \
   --arg udid "${device_udid}" \
   --arg name "${device_name}" \
   --arg osVersion "${device_os}" \
-  --argjson listenerPid "${listener_pid}" \
-  --arg listenerArgs "${listener_args}" \
-  --arg listenerUdid "${listener_udid}" \
-  --argjson listenerReusable "${listener_reusable}" \
   --argjson forwardRestarted "${forward_restarted}" \
   --arg deviceIp "${device_ip}" \
   --arg runDir "${run_dir}" \
   --arg statusJson "${wda_status}" \
+  --arg tmuxIproxySession "iproxy-${device_udid}-${port}" \
+  --arg tmuxWdaSession "wda-${device_udid}" \
   '{
     device: {
       udid: $udid,
@@ -217,11 +217,11 @@ cache_payload="$(jq -n \
       host: $host,
       port: $port,
       checkedAt: $checkedAt,
-      listenerPid: $listenerPid,
-      listenerArgs: $listenerArgs,
-      listenerTargetUdid: $listenerUdid,
-      listenerReusable: $listenerReusable,
       deviceIp: (if $deviceIp == "" then null else $deviceIp end)
+    },
+    tmux: {
+      iproxySession: $tmuxIproxySession,
+      wdaSession: $tmuxWdaSession
     },
     wda: {
       checkedAt: $checkedAt,
@@ -245,10 +245,11 @@ result_payload="$(jq -n \
   --arg name "${device_name}" \
   --arg osVersion "${device_os}" \
   --arg deviceIp "${device_ip}" \
-  --argjson listenerPid "${listener_pid}" \
   --argjson forwardRestarted "${forward_restarted}" \
   --arg runDir "${run_dir}" \
   --arg statusJson "${wda_status}" \
+  --arg tmuxIproxySession "iproxy-${device_udid}-${port}" \
+  --arg tmuxWdaSession "wda-${device_udid}" \
   '{
     ok: true,
     checkedAt: $checkedAt,
@@ -262,8 +263,11 @@ result_payload="$(jq -n \
     connection: {
       host: $host,
       port: $port,
-      listenerPid: $listenerPid,
       forwardRestarted: $forwardRestarted
+    },
+    tmux: {
+      iproxySession: $tmuxIproxySession,
+      wdaSession: $tmuxWdaSession
     },
     wda: {
       ready: true,
